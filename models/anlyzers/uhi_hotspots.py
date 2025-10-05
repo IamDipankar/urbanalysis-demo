@@ -558,13 +558,16 @@ def run(session_id, ee_geometry, ee_bbox):
     print(f"AOI: {AOI_BBOX} | Window: {start_iso} → {end_iso}")
 
     # Day & night LST means
+    print("__Debug__ Day & night LST Means...")
     lst_day_img   = lst_day_mean(aoi, start_iso, end_iso)
     lst_night_img = lst_night_mean(aoi, start_iso, end_iso)
 
     # Sample grid for clustering
+    print("__Debug__ Making sample grid for clustering...")
     fc = lst_day_img.sample(region=aoi, scale=SCALE_M, geometries=True)
     feats = fc.limit(MAX_POINTS).getInfo().get("features", [])
     rows = []
+    print("__Debug__ for f in feats")
     for f in feats:
         geom = f.get("geometry", {})
         if geom.get("type") != "Point": continue
@@ -573,10 +576,13 @@ def run(session_id, ee_geometry, ee_bbox):
         if v is None or not math.isfinite(v): continue
         rows.append({"lat": float(lat), "lon": float(lon), "lst_c": float(v)})
 
+    print("__Debug__ Done... got", len(rows), "valid samples.")
+    
     if not rows:
         raise SystemExit("No samples. Try increasing DAYS_BACK or MAX_POINTS.")
 
     # z-scores & pick hotspots
+    print("__Debug__ z-scores & pick hotspots...")
     lst_vals = [r["lst_c"] for r in rows]
     lst_z = zscores(lst_vals)
     pcts  = [p_rank(lst_z, v) for v in lst_z]
@@ -587,15 +593,19 @@ def run(session_id, ee_geometry, ee_bbox):
     hotspots.sort(key=lambda x: x["lst_z"], reverse=True)
 
     # Cluster & envelopes
+    print("__Debug__ Cluster & envelopes...")
     clusters = ensure_clusters(hotspots)
+    print("__Debug__ Starting zip(hotspots, clusters) loop")
     for hp, cid in zip(hotspots, clusters):
         hp["_cid"] = cid
+    print("__Debug__ done")
     metric_crs = utm_crs_from_bbox(AOI_BBOX)
     envelopes_by_cid = build_concave_envelopes(hotspots, clusters, metric_crs, alpha_m=ALPHA_M, min_pts=MIN_ENVELOPE_POINTS)
     if not envelopes_by_cid:
         envelopes_by_cid = build_concave_envelopes(hotspots, [0]*len(hotspots), metric_crs, alpha_m=ALPHA_M, min_pts=3)
 
     # Union per cluster & areas
+    print("__Debug__ Union per cluster & areas...")
     cluster_union = {}
     cluster_area_km2 = {}
     for cid, polys in envelopes_by_cid.items():
@@ -609,40 +619,48 @@ def run(session_id, ee_geometry, ee_bbox):
         cluster_area_km2[cid] = area_km2
 
     # Top-3 by area
+    print("__Debug__ Top-3 by area...")
     top_cids = sorted(cluster_area_km2.keys(), key=lambda c: cluster_area_km2[c], reverse=True)[:3]
     selected = [(cid, cluster_union[cid]) for cid in top_cids]
 
     # ---- Ancillary datasets ----
+    print("__Debug__ Ancillary datasets…")
     wc = worldcover_map(year=2021)
     ndvi_img = sentinel2_ndvi_recent(aoi, months_back=6)
     pop_img  = population_image(aoi)
     child_img, elder_img = worldpop_children_elderly(aoi)  # may be None
 
     # ERA5 (air temp & dewpoint for heat index proxy)
+    print("__Debug__ ERA5 air temp & dewpoint…")
     try:
         era5 = ee.ImageCollection("ECMWF/ERA5/DAILY").filterDate(start_iso, end_iso).filterBounds(aoi)
         t2m = era5.select("mean_2m_air_temperature").mean().subtract(273.15).rename("t2m_c").clip(aoi)
         td2m = era5.select("mean_2m_dewpoint_temperature").mean().subtract(273.15).rename("td2m_c").clip(aoi)
     except Exception:
+        print("__Debug__ exception getting ERA5")
         t2m = None; td2m = None
 
     # Season windows
+    print("__Debug__ Season windows & pre-monsoon, monsoon, post-monsoon LST means…")
     (pre_s, pre_e), (mon_s, mon_e), (post_s, post_e) = season_bands_today()
     lst_pre  = lst_day_mean(aoi, pre_s,  pre_e)
     lst_mon  = lst_day_mean(aoi, mon_s,  mon_e)
     lst_post = lst_day_mean(aoi, post_s, post_e)
 
     # Extreme hot periods (use 8-day MOD11A2; count # composites above 90th pct over AOI)
+    print("__Debug__ Extreme hot periods (MODIS 8-day)…")
     coll_8d = (ee.ImageCollection("MODIS/061/MOD11A2")
                 .filterBounds(aoi).filterDate(start_iso, end_iso)
                 .select("LST_Day_1km").map(lambda img: img.updateMask(img.gt(0))))
     # 90th percentile over AOI
+    print("__Debug__ 90th percentile LST over AOI…")
     try:
         pct90 = coll_8d.reduce(ee.Reducer.percentile([90])).multiply(0.02).subtract(273.15).rename("p90")
     except Exception:
         pct90 = None
 
     # OSM: buildings, sensitive sites, water
+    print("__Debug__ OSM: buildings, sensitive sites, water…")
     aoi_poly = aoi_polygon_wgs84()
     try:
         buildings = osm_geoms_from_polygon(aoi_poly, {"building": True})
@@ -659,12 +677,14 @@ def run(session_id, ee_geometry, ee_bbox):
         water = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
     # Print summaries
+    print("__Debug__ Summarizing top clusters…")
     print("\n================= Top UHI clusters (area-wise) =================")
     print("(z (σ): standardized vs city typical; 0 ≈ typical)")
 
     parameters = dict()
 
     # Helpers for class fractions
+    print("__Debug__ Defining helpers for class fractions…")
     def frac_worldcover(mask_vals, poly):
         if wc is None: return None
         geom = ee.Geometry(poly.__geo_interface__)
@@ -678,7 +698,9 @@ def run(session_id, ee_geometry, ee_bbox):
 
 
     # Loop over selected clusters
+    print("Looping over selected clusters…")
     for rank, (cid, poly) in enumerate(selected, start=1):
+        print(f"__Debug__ \n--- Hot zone #{rank} (cluster {cid}) ---")
         # Geometry conversions
         poly_series = gpd.GeoSeries([poly], crs="EPSG:4326").to_crs(utm_crs_from_bbox(AOI_BBOX))
         area_km2 = float(poly_series.area.iloc[0] / 1e6)
