@@ -18,6 +18,9 @@ import markdown
 from markdownify import markdownify as md
 from fastapi.middleware.cors import CORSMiddleware
 
+
+checker = 0
+
 # Add models directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'models', 'anlyzers'))
 
@@ -322,3 +325,11 @@ async def llm_inference(request: LLM_Inference_Request):
         "response": content.replace('\n', ''),
         "markdowned": markdowned
     }
+
+
+@app.get("/checker")
+async def checker_function():
+    global checker
+    checker += 1
+    print("Checker incremented to:", checker)
+    return {"checker": checker}
