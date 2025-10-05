@@ -663,17 +663,23 @@ def run(session_id, ee_geometry, ee_bbox):
     print(" OSM: buildings, sensitive sites, water…")
     aoi_poly = aoi_polygon_wgs84()
     try:
+        print("here1")
         buildings = osm_geoms_from_polygon(aoi_poly, {"building": True})
     except Exception:
+        print("here2")
         buildings = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     try:
+        print("here3")
         sensitive = osm_geoms_from_polygon(aoi_poly, {"amenity": ["school","clinic","hospital","doctors"],
                                                         "social_facility": ["nursing_home","assisted_living"]})
     except Exception:
+        print("here4")
         sensitive = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     try:
+        print("here5")
         water = osm_geoms_from_polygon(aoi_poly, {"natural": ["water"], "waterway": ["river","canal"], "landuse": ["reservoir"]})
     except Exception:
+        print("here6")
         water = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
     # Print summaries
