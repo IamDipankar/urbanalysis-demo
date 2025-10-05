@@ -10,6 +10,7 @@ from shapely.ops import unary_union
 import dotenv
 # from memory_profiler import profile
 import markdown
+import sys
 
 dotenv.load_dotenv()
 
@@ -555,7 +556,7 @@ def run(session_id, ee_geometry, ee_bbox):
     ee_init_headless()
     aoi = ee_geometry
     start_iso, end_iso = str(START), str(END)
-    print(f"AOI: {AOI_BBOX} | Window: {start_iso} → {end_iso}")
+    print(f"AOI: given | Window: {start_iso} → {end_iso}")
 
     # Day & night LST means
     print("Day & night LST Means...")
@@ -659,27 +660,35 @@ def run(session_id, ee_geometry, ee_bbox):
     except Exception:
         pct90 = None
 
-    # OSM: buildings, sensitive sites, water
+    # OSM: buildings, sensitive sites, water (Ram culprit)
     print(" OSM: buildings, sensitive sites, water…")
     aoi_poly = aoi_polygon_wgs84()
+    print("aoi_poly done")
+    sys.stdout.flush()
     try:
         print("here1")
+        sys.stdout.flush()
         buildings = osm_geoms_from_polygon(aoi_poly, {"building": True})
     except Exception:
         print("here2")
+        sys.stdout.flush()
         buildings = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     try:
         print("here3")
+        sys.stdout.flush()
         sensitive = osm_geoms_from_polygon(aoi_poly, {"amenity": ["school","clinic","hospital","doctors"],
                                                         "social_facility": ["nursing_home","assisted_living"]})
     except Exception:
         print("here4")
+        sys.stdout.flush()
         sensitive = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     try:
         print("here5")
+        sys.stdout.flush()
         water = osm_geoms_from_polygon(aoi_poly, {"natural": ["water"], "waterway": ["river","canal"], "landuse": ["reservoir"]})
     except Exception:
         print("here6")
+        sys.stdout.flush()
         water = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
     # Print summaries
