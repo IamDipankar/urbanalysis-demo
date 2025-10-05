@@ -660,36 +660,36 @@ def run(session_id, ee_geometry, ee_bbox):
     except Exception:
         pct90 = None
 
-    # OSM: buildings, sensitive sites, water (Ram culprit)
-    print(" OSM: buildings, sensitive sites, water…")
-    aoi_poly = aoi_polygon_wgs84()
-    print("aoi_poly done")
-    sys.stdout.flush()
-    try:
-        print("here1")
-        sys.stdout.flush()
-        buildings = osm_geoms_from_polygon(aoi_poly, {"building": True})
-    except Exception:
-        print("here2")
-        sys.stdout.flush()
-        buildings = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
-    try:
-        print("here3")
-        sys.stdout.flush()
-        sensitive = osm_geoms_from_polygon(aoi_poly, {"amenity": ["school","clinic","hospital","doctors"],
-                                                        "social_facility": ["nursing_home","assisted_living"]})
-    except Exception:
-        print("here4")
-        sys.stdout.flush()
-        sensitive = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
-    try:
-        print("here5")
-        sys.stdout.flush()
-        water = osm_geoms_from_polygon(aoi_poly, {"natural": ["water"], "waterway": ["river","canal"], "landuse": ["reservoir"]})
-    except Exception:
-        print("here6")
-        sys.stdout.flush()
-        water = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    # # OSM: buildings, sensitive sites, water (Ram culprit)
+    # print(" OSM: buildings, sensitive sites, water…")
+    # aoi_poly = aoi_polygon_wgs84()
+    # print("aoi_poly done")
+    # sys.stdout.flush()
+    # try:
+    #     print("here1")
+    #     sys.stdout.flush()
+    #     buildings = osm_geoms_from_polygon(aoi_poly, {"building": True})
+    # except Exception:
+    #     print("here2")
+    #     sys.stdout.flush()
+    #     buildings = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    # try:
+    #     print("here3")
+    #     sys.stdout.flush()
+    #     sensitive = osm_geoms_from_polygon(aoi_poly, {"amenity": ["school","clinic","hospital","doctors"],
+    #                                                     "social_facility": ["nursing_home","assisted_living"]})
+    # except Exception:
+    #     print("here4")
+    #     sys.stdout.flush()
+    #     sensitive = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    # try:
+    #     print("here5")
+    #     sys.stdout.flush()
+    #     water = osm_geoms_from_polygon(aoi_poly, {"natural": ["water"], "waterway": ["river","canal"], "landuse": ["reservoir"]})
+    # except Exception:
+    #     print("here6")
+    #     sys.stdout.flush()
+    #     water = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
     # Print summaries
     print(" Summarizing top clusters…")
@@ -740,41 +740,41 @@ def run(session_id, ee_geometry, ee_bbox):
 
         # Buildings: roof area, cool-roof potential, height/density proxy
         large_roof_threshold_m2 = 500.0
-        b_in = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
-        try:
-            if buildings is not None and not buildings.empty:
-                try:
-                    idx = buildings.sindex
-                    cand = buildings.iloc[list(idx.intersection(poly.bounds))]
-                    b_in = cand[cand.geometry.intersects(poly)].copy()
-                except Exception:
-                    b_in = buildings[buildings.geometry.intersects(poly)].copy()
-        except Exception:
-            pass
+        # b_in = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+        # try:
+        #     if buildings is not None and not buildings.empty:
+        #         try:
+        #             idx = buildings.sindex
+        #             cand = buildings.iloc[list(idx.intersection(poly.bounds))]
+        #             b_in = cand[cand.geometry.intersects(poly)].copy()
+        #         except Exception:
+        #             b_in = buildings[buildings.geometry.intersects(poly)].copy()
+        # except Exception:
+        #     pass
         roof_area_m2 = 0.0
         large_roofs_m2 = 0.0
         large_roofs_n  = 0
         mean_levels = None
-        if b_in is not None and not b_in.empty:
-            b_proj = b_in.to_crs(utm_crs_from_bbox(AOI_BBOX))
-            areas = b_proj.geometry.area.fillna(0.0)
-            roof_area_m2 = float(areas.sum())
-            large_mask = areas >= large_roof_threshold_m2
-            large_roofs_m2 = float(areas[large_mask].sum())
-            large_roofs_n  = int(large_mask.sum())
-            # height/levels proxy
-            lvl = []
-            for _, r in b_in.iterrows():
-                lv = r.get("building:levels") or r.get("levels") or r.get("height")
-                try:
-                    if isinstance(lv, str) and "m" in lv: lv = lv.replace("m","").strip()
-                    lvf = float(lv)
-                    # if height in meters, roughly convert to levels (3 m/level)
-                    if lvf > 40: lvf = lvf / 3.0
-                    lvl.append(lvf)
-                except Exception:
-                    continue
-            if lvl: mean_levels = sum(lvl)/len(lvl)
+        # if b_in is not None and not b_in.empty:
+        #     b_proj = b_in.to_crs(utm_crs_from_bbox(AOI_BBOX))
+        #     areas = b_proj.geometry.area.fillna(0.0)
+        #     roof_area_m2 = float(areas.sum())
+        #     large_mask = areas >= large_roof_threshold_m2
+        #     large_roofs_m2 = float(areas[large_mask].sum())
+        #     large_roofs_n  = int(large_mask.sum())
+        #     # height/levels proxy
+        #     lvl = []
+        #     for _, r in b_in.iterrows():
+        #         lv = r.get("building:levels") or r.get("levels") or r.get("height")
+        #         try:
+        #             if isinstance(lv, str) and "m" in lv: lv = lv.replace("m","").strip()
+        #             lvf = float(lv)
+        #             # if height in meters, roughly convert to levels (3 m/level)
+        #             if lvf > 40: lvf = lvf / 3.0
+        #             lvl.append(lvf)
+        #         except Exception:
+        #             continue
+        #     if lvl: mean_levels = sum(lvl)/len(lvl)
 
         # Informal housing proxy: roof m² per person (lower → denser/informal)
         informal_proxy = None
@@ -784,17 +784,17 @@ def run(session_id, ee_geometry, ee_bbox):
                                 else "medium density" if m2_per_person < 20.0
                                 else "lower density")
         # Sensitive sites inside
-        sens = count_sensitive_inside(sensitive, poly)
+        # sens = count_sensitive_inside(sensitive, poly)
 
-        # Water distance
-        dist_water_m = None
-        if water is not None and not water.empty:
-            try:
-                w_proj = water.to_crs(utm_crs_from_bbox(AOI_BBOX))
-                p_proj = poly_series.iloc[0]
-                dist_water_m = float(w_proj.distance(p_proj).min())
-            except Exception:
-                dist_water_m = None
+        # # Water distance
+        # dist_water_m = None
+        # if water is not None and not water.empty:
+        #     try:
+        #         w_proj = water.to_crs(utm_crs_from_bbox(AOI_BBOX))
+        #         p_proj = poly_series.iloc[0]
+        #         dist_water_m = float(w_proj.distance(p_proj).min())
+        #     except Exception:
+        #         dist_water_m = None
 
         # Day/Night means & delta
         day_c   = reduce_mean(lst_day_img,   geom, scale=1000)
@@ -869,10 +869,10 @@ def run(session_id, ee_geometry, ee_bbox):
         else:
             description += (f"- **Building height/density:** n/a\n")
 
-        if dist_water_m is not None:
-            description += (f"- **Nearest water:** ~{dist_water_m:.0f} m → *blue-corridor greening potential*\n")
-        else:
-            description += (f"- **Nearest water:** n/a\n")
+        # if dist_water_m is not None:
+        #     description += (f"- **Nearest water:** ~{dist_water_m:.0f} m → *blue-corridor greening potential*\n")
+        # else:
+        #     description += (f"- **Nearest water:** n/a\n")
 
         day_txt = f"{day_c:.1f} °C" if day_c is not None else "n/a"
         night_txt = f"{night_c:.1f} °C" if night_c is not None else "n/a"
@@ -896,8 +896,8 @@ def run(session_id, ee_geometry, ee_bbox):
             description += (f"- **Heat index:** n/a\n")
 
         # Sensitive sites
-        description += (f"- **Sensitive sites:** schools:{sens.get('schools',0)}, clinics:{sens.get('clinics',0)}, "
-                f"hospitals:{sens.get('hospitals',0)}, elder homes:{sens.get('elder_homes',0)}\n")
+        # description += (f"- **Sensitive sites:** schools:{sens.get('schools',0)}, clinics:{sens.get('clinics',0)}, "
+        #         f"hospitals:{sens.get('hospitals',0)}, elder homes:{sens.get('elder_homes',0)}\n")
 
         print(description)
         parameters[cid] = description
