@@ -17,9 +17,11 @@ from models.llms import groq_api
 import markdown
 from markdownify import markdownify as md
 from fastapi.middleware.cors import CORSMiddleware
+import random
 
 
 checker = 0
+signature = random.random() * 1000000
 
 # Add models directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'models', 'anlyzers'))
@@ -329,7 +331,8 @@ async def llm_inference(request: LLM_Inference_Request):
 
 @app.get("/checker")
 async def checker_function():
+    global signature
     global checker
     checker += 1
-    print("Checker incremented to:", checker)
+    print("Checker incremented to:", checker, "Its signature is: ", signature)
     return {"checker": checker}
