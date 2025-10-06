@@ -106,6 +106,47 @@ document.addEventListener('DOMContentLoaded', function() {
         navMenu.classList.remove('active');
     }
 
+    function reconnectWebSocket(protocol) {
+        console.log("Reconnecting to WebSocket at protocol:", protocol);
+        const wsUrl = `${protocol}//${window.location.host}/ws-reconnect/${sessionId}`;
+        
+        websocket = new WebSocket(wsUrl);
+
+        websocket.onopen = function(event) {
+            showNotification('Reconnected to server', 'success');
+            console.log('WebSocket reconnected');
+        }
+
+        websocket.onmessage = function(event) {
+            const message = JSON.parse(event.data);
+            handleWebSocketMessage(message);
+        };
+
+        websocket.onclose = function(event) {
+            console.log('WebSocket disconnected');
+            if (event && event.code && event.code == 1012){
+                showNotification('Analysis failed unexpectedly');
+                resetForm();
+                isAnalyzing = false;
+                return;
+            }
+            if (isAnalyzing) {
+                // Attempt to reconnect if analysis is still running
+                setTimeout(reconnectWebSocket(protocol), 10000);
+
+            }
+        };
+
+        websocket.onerror = function(error) {
+            console.error('WebSocket error:', error);
+            if (error && error.code == 1012) {
+                showNotification('Analysis failed unexpectedly');
+                resetForm();
+            }
+        }
+
+    }
+
 
     // WebSocket functions
     function connectWebSocket() {
@@ -125,10 +166,12 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         
         websocket.onclose = function(event) {
+            showNotification('Connection Lost', 'warning');
             console.log('WebSocket disconnected');
             if (isAnalyzing) {
                 // Attempt to reconnect if analysis is still running
-                setTimeout(connectWebSocket, 2000);
+                setTimeout(reconnectWebSocket(protocol), 10000);
+                return;
             }
         };
         

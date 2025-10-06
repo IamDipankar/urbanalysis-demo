@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks
+from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks,status
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -162,6 +162,7 @@ def run_analyses_background(analyses: List[str], session_id: str, district: str,
         analysis_status[session_id] = {
             "status": "completed",
             "completed_analyses": completed_analyses,
+            "requested_analyses": analyses,
             "timestamp": datetime.now().isoformat()
         }
         
@@ -180,8 +181,7 @@ def run_analyses_background(analyses: List[str], session_id: str, district: str,
 async def read_root():
     return FileResponse("statics/index.html")
 
-@app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
+async def continue_websocket(websocket: WebSocket, session_id: str):
     await manager.connect(websocket, session_id)
     try:
         while True:
@@ -194,6 +194,36 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     finally:
         manager.disconnect(session_id)
 
+@app.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    return await continue_websocket(websocket, session_id)
+
+@app.websocket("/ws-reconnect/{session_id}")
+async def websocket_reconnect(websocket: WebSocket, session_id: str):
+    print("Its here")
+    if session_id not in analysis_status:
+        print("Now its here")
+        await websocket.accept()
+        await websocket.close(code=status.WS_1012_SERVICE_RESTART, reason="Your session ID is invalid or expired.")
+        print("here3")
+        return
+    if analysis_status[session_id]["status"] == "completed":
+        print("here4")
+        await websocket.accept()
+        total_analyses = len(analysis_status[session_id].get("requested_analyses", []))
+        completed_analyses = analysis_status[session_id].get("completed_analyses", [])
+        await websocket.send_text(json.dumps( {
+            "type": "all_analyses_complete",
+            "completed_analyses": completed_analyses,
+            "message": f"All analyses completed! {len(completed_analyses)}/{total_analyses} successful."
+        }))
+        await asyncio.sleep(10)  # Keep connection alive for a short while
+        print("here5")
+        return
+    print("here6")
+    return await continue_websocket(websocket, session_id)
+        
+
 @app.post("/run-analysis")
 async def run_analysis(request: AnalysisRequest, background_tasks: BackgroundTasks):
     """Start analysis in background and return immediately"""
@@ -204,9 +234,11 @@ async def run_analysis(request: AnalysisRequest, background_tasks: BackgroundTas
     # Initialize analysis status
     analysis_status[request.session_id] = {
         "status": "running",
-        "analyses": request.analyses,
+        "requested_analyses": request.analyses,
         "timestamp": datetime.now().isoformat()
     }
+
+    await asyncio.sleep(1)
     
     # Start analyses in background
     background_tasks.add_task(run_analyses_background, request.analyses, request.session_id, request.district, request.upazila)
