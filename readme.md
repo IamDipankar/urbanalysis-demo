@@ -1,4 +1,8 @@
-# 🌍 [urbanalysis.earth](https://urbanalysis.earth)
+# 🌍 [Urbanalysis](https://urbanalysis.earth): Urban Heat, Air Quality and Green Access Analyzer
+
+
+[urbanalysis.earth](https://urbanalysis.earth)
+
 
 ### AI-Driven Urban Sustainability Planner
 
@@ -8,7 +12,7 @@
 
 ## 🛰️ Overview
 
-This project was developed as part of the **NASA Space Apps Challenge 2025**.
+This project was developed by **Team Codenebula** as part of the [NASA Space Apps Challenge 2025](https://www.spaceappschallenge.org/2025/challenges/data-pathways-to-healthy-cities-and-human-settlements/).
 
 It is an intelligent **Smart Urban Planning Web Application** that helps planners and policymakers analyze and mitigate three major urban environmental challenges:
 
@@ -22,17 +26,16 @@ Through the fusion of **Earth Observation (EO)** data from NASA and ESA satellit
 
 ## 🧭 Table of Contents
 
-* [Overview](#overview)
-* [Core Functionalities](#core-functionalities)
-* [How It Works](#how-it-works)
-
-  * [Green Access Analysis](#green-access-analysis)
-  * [Urban Heat Island Analysis](#urban-heat-island-analysis)
-  * [Air Quality Analysis](#air-quality-analysis)
-* [NASA & ESA Data Sources](#nasa--esa-data-sources)
-* [Local Deployment Guide](#local-deployment-guide)
-* [Acknowledgments](#acknowledgments)
-* [License](#license)
+* [Overview](#️-overview)
+* [Core Functionalities](#-core-functionalities)
+* [How It Works](#️-how-it-works)
+  * [Green Access Analysis](#-green-access-analysis)
+  * [Urban Heat Island Analysis](#-urban-heat-island-analysis)
+  * [Air Quality Analysis](#-air-quality-analysis)
+* [NASA & ESA Data Sources](#️-nasa--esa-data-sources)
+* [Local Deployment Guide](#-local-deployment-guide)
+* [Acknowledgments](#-acknowledgments)
+* [License](#-license)
 
 ---
 
@@ -162,7 +165,17 @@ Pollution cluster maps, exposure summaries, and AI briefs linking pollution with
    pip install -r requirements.txt
    ```
 
-5. **Run the application**
+5. **Create a `.env` file**
+   
+   Create a `.env` file in the root directory with the following configuration:
+
+   ```env
+   EE_SERVICE_ACCOUNT=<Your earth engine service account>
+   EE_KEY_B64=<Your earth engine key json file base64 encrypted>
+   GROQ_API_KEY=<Your groq api key>
+   ```
+
+6. **Run the application**
 
    ```bash
    uvicorn main:app --host 0.0.0.0 --workers 1
@@ -170,6 +183,17 @@ Pollution cluster maps, exposure summaries, and AI briefs linking pollution with
 
 6. **Load the web app**
    Click on the link shown in your console (eg. `http://127.0.0.1:8000` or `localhost:8000`) to open this site on your browser.
+
+---
+## 👥 The Team
+
+**Team Codenebula**
+
+| Role | Name | Responsibilities |
+|------|------|------------------|
+| **Team Lead** | Abrar Faiaz | Data pipeline generation, processing, prompt engineering, planning |
+| **Web Developer** | Dipankar Mitra | Web application development, AI integration |
+| **Urban Analyzer** | Apurbo Kumar | Policy searching, urban planning strategies |
 
 ---
 
@@ -185,8 +209,3 @@ We gratefully acknowledge:
 * The **AI and data science community** for continuous innovation in open geospatial intelligence.
 
 ---
-
-## 📜 License
-
-This project is licensed under the
-**GNU GENERAL PUBLIC LICENSE, Version 2, June 1991.**
