@@ -336,3 +336,8 @@ async def checker_function():
     checker += 1
     print("Checker incremented to:", checker, "Its signature is: ", signature)
     return {"checker": checker}
+
+
+@app.get("/how-it-works")
+async def how_it_works():
+    return FileResponse("statics/how-it-works.html")

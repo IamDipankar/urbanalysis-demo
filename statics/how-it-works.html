@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How It Works - URBANALYSIS</title>
+    <link rel="stylesheet" href="/statics/styles.d112.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Additional styles for how-it-works page */
+        .how-it-works-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 8rem 2rem 4rem;
+            min-height: 100vh;
+        }
+        
+        .how-it-works-header {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+        
+        .how-it-works-header h1 {
+            font-size: 3rem;
+            color: #ffffff;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+        
+        .how-it-works-header p {
+            font-size: 1.25rem;
+            color: #ffffff;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        .analysis-section {
+            margin-bottom: 4rem;
+            background: var(--bg-primary);
+            border-radius: 1rem;
+            padding: 3rem;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-color);
+        }
+        
+        .analysis-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .analysis-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: white;
+        }
+        
+        .green-icon { background: linear-gradient(135deg, #10b981, #059669); }
+        .heat-icon { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .air-icon { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+        
+        .analysis-header h2 {
+            font-size: 2rem;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        
+        .objective {
+            background: var(--bg-accent);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            margin-bottom: 2rem;
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .objective-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .objective-text {
+            color: #d9e8ff;
+            line-height: 1.6;
+        }
+        
+        .pipeline {
+            margin-bottom: 2rem;
+        }
+        
+        .pipeline-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+        }
+        
+        .pipeline-steps {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .pipeline-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 0.5rem;
+            transition: transform 0.2s ease;
+        }
+        
+        .pipeline-step:hover {
+            transform: translateX(5px);
+        }
+        
+        .step-number {
+            width: 24px;
+            height: 24px;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            font-weight: 600;
+            flex-shrink: 0;
+            margin-top: 0.25rem;
+        }
+        
+        .step-content {
+            flex: 1;
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+        
+        .formula {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-family: 'Courier New', monospace;
+            margin: 0.5rem 0;
+            display: inline-block;
+        }
+        
+        .output-section {
+            background: var(--bg-accent);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+        }
+        
+        .output-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.75rem;
+        }
+        
+        .output-text {
+            color: #fdfdfd;
+            line-height: 1.6;
+        }
+        
+        .data-sources {
+            margin-top: 4rem;
+            background: var(--bg-primary);
+            border-radius: 1rem;
+            padding: 3rem;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-color);
+        }
+        
+        .data-sources h2 {
+            font-size: 2rem;
+            color: var(--text-primary);
+            text-align: center;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .data-category {
+            background: var(--bg-secondary);
+            padding: 2rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border-color);
+        }
+        
+        .data-category h3 {
+            color: var(--text-primary);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .data-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .data-item {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: var(--bg-primary);
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color);
+        }
+        
+        .data-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+        }
+        
+        .data-description {
+            color: #ebebeb;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        
+        .back-button {
+            position: fixed;
+            top: 6rem;
+            left: 2rem;
+            background: var(--primary-color);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.3s ease;
+            z-index: 999;
+        }
+        
+        .back-button:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+        }
+        
+        @media (max-width: 768px) {
+            .how-it-works-container {
+                padding: 6rem 1rem 2rem;
+            }
+            
+            .how-it-works-header h1 {
+                font-size: 2rem;
+            }
+            
+            .analysis-section {
+                padding: 2rem 1.5rem;
+            }
+            
+            .back-button {
+                top: 5rem;
+                left: 1rem;
+                padding: 0.5rem 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar scrolled" id="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="nav-icon">
+                    <i class="fas fa-globe-americas"></i>
+                </div>
+                <a href = "/" class = "nav-link"><span class="nav-title">URBANALYSIS</span></a>
+            </div>
+            
+            <div class="nav-menu" id="navMenu">
+                <a href="/" class="nav-link">
+                    <i class="fas fa-home"></i>
+                    Home
+                </a>
+                <a href="https://github.com/IamDipankar/nasa-space-app-web" target="_blank" class="nav-link">
+                    <i class="fab fa-github"></i>
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- <a href="/" class="back-button">
+        <i class="fas fa-arrow-left"></i>
+        Back to Home
+    </a> -->
+
+    <div class="how-it-works-container">
+        <div class="how-it-works-header">
+            <h1>⚙️ How It Works</h1>
+            <p>Our system transforms complex satellite datasets into actionable, location-specific insights using geospatial analytics and AI-powered natural language generation.</p>
+        </div>
+
+        <!-- Green Access Analysis -->
+        <div class="analysis-section">
+            <div class="analysis-header">
+                <div class="analysis-icon green-icon">
+                    <i class="fas fa-leaf"></i>
+                </div>
+                <h2>🟢 Green Access Analysis</h2>
+            </div>
+            
+            <div class="objective">
+                <div class="objective-title">Objective:</div>
+                <div class="objective-text">Detect vegetation-deficient neighborhoods and recommend new micro-parks.</div>
+            </div>
+            
+            <div class="pipeline">
+                <div class="pipeline-title">Pipeline:</div>
+                <ul class="pipeline-steps">
+                    <li class="pipeline-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            Retrieve <strong>Sentinel-2 surface reflectance</strong> (Bands 8 & 4).
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            Compute <div class="formula">NDVI = (NIR – Red) / (NIR + Red)</div>
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            Classify NDVI into low (&lt; 0.2), moderate (0.2–0.5), and high (&gt; 0.5) greenness zones.
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            Overlay with <strong>OpenStreetMap (OSM)</strong> data for roads, parks, and accessibility.
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            Identify underserved zones beyond a <strong>10-minute walking radius</strong> from existing parks using <strong>OSMnx isochrones</strong>.
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">6</div>
+                        <div class="step-content">
+                            Feed contextual data (population, soil, terrain) into the AI engine for micro-park recommendations.
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="output-section">
+                <div class="output-title">Output:</div>
+                <div class="output-text">
+                    Interactive NDVI maps, green gap overlays, and AI-generated "Suitability & Recommendation" briefs.
+                </div>
+            </div>
+        </div>
+
+        <!-- Urban Heat Island Analysis -->
+        <div class="analysis-section">
+            <div class="analysis-header">
+                <div class="analysis-icon heat-icon">
+                    <i class="fas fa-thermometer-half"></i>
+                </div>
+                <h2>🔴 Urban Heat Island Analysis</h2>
+            </div>
+            
+            <div class="objective">
+                <div class="objective-title">Objective:</div>
+                <div class="objective-text">Detect heat stress zones for cooling interventions.</div>
+            </div>
+            
+            <div class="pipeline">
+                <div class="pipeline-title">Pipeline:</div>
+                <ul class="pipeline-steps">
+                    <li class="pipeline-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            Acquire <strong>MODIS day/night</strong> and <strong>ECOSTRESS</strong> Land Surface Temperature (LST) data.
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            Compute <strong>z-score anomalies</strong> relative to city means.
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            Apply <strong>DBSCAN clustering</strong> to identify contiguous heat clusters (&gt; 2σ).
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            Integrate land cover, NDVI, and population exposure data.
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="output-section">
+                <div class="output-title">Output:</div>
+                <div class="output-text">
+                    Severity-coded UHI maps (Elevated / High / Severe) with tables showing population exposure and recommended cooling measures (e.g., green roofs, reflective surfaces, tree corridors).
+                </div>
+            </div>
+        </div>
+
+        <!-- Air Quality Analysis -->
+        <div class="analysis-section">
+            <div class="analysis-header">
+                <div class="analysis-icon air-icon">
+                    <i class="fas fa-smog"></i>
+                </div>
+                <h2>🟣 Air Quality Analysis</h2>
+            </div>
+            
+            <div class="objective">
+                <div class="objective-title">Objective:</div>
+                <div class="objective-text">Locate air pollution hotspots and vulnerable communities.</div>
+            </div>
+            
+            <div class="pipeline">
+                <div class="pipeline-title">Pipeline:</div>
+                <ul class="pipeline-steps">
+                    <li class="pipeline-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            Aggregate <strong>Sentinel-5P NO₂</strong> and <strong>GEOS-CF PM₂.₅</strong> reanalysis data.
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            Standardize via z-scores and apply <strong>DBSCAN clustering</strong> to delineate hotspots.
+                        </div>
+                    </li>
+                    <li class="pipeline-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            Enrich with contextual layers (population, schools, hospitals, industrial zones).
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="output-section">
+                <div class="output-title">Output:</div>
+                <div class="output-text">
+                    Pollution cluster maps, exposure summaries, and AI briefs linking pollution with land use and policy interventions.
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Sources -->
+        <div class="data-sources">
+            <h2>
+                <i class="fas fa-satellite"></i>
+                NASA & ESA Data Sources
+            </h2>
+            
+            <div class="data-grid">
+                <div class="data-category">
+                    <h3>
+                        <i class="fas fa-rocket"></i>
+                        NASA Data
+                    </h3>
+                    <ul class="data-list">
+                        <li class="data-item">
+                            <div class="data-name">Landsat Program</div>
+                            <div class="data-description">Historical reference and fallback for NDVI composites</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">SMAP (Soil Moisture Active Passive)</div>
+                            <div class="data-description">Soil moisture context for vegetation and UHI modeling</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">MODIS (Moderate Resolution Imaging Spectroradiometer)</div>
+                            <div class="data-description">Land surface temperature and aerosol data</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">ECOSTRESS</div>
+                            <div class="data-description">High-resolution thermal data for intra-urban heat mapping</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">SEDAC (Socioeconomic Data and Applications Center)</div>
+                            <div class="data-description">Population and exposure context</div>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="data-category">
+                    <h3>
+                        <i class="fas fa-globe-europe"></i>
+                        ESA / Partner Data
+                    </h3>
+                    <ul class="data-list">
+                        <li class="data-item">
+                            <div class="data-name">Copernicus Sentinel-2</div>
+                            <div class="data-description">NDVI-based vegetation monitoring</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">Copernicus Sentinel-5P</div>
+                            <div class="data-description">Air quality (NO₂, O₃, SO₂) monitoring</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">JRC Global Surface Water</div>
+                            <div class="data-description">Water body reference and blue-green corridor detection</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">ISRIC SoilGrids</div>
+                            <div class="data-description">Soil data for suitability assessment</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">OpenStreetMap</div>
+                            <div class="data-description">Roads, green polygons, land use</div>
+                        </li>
+                        <li class="data-item">
+                            <div class="data-name">WorldPop / GHSL / Copernicus DEM</div>
+                            <div class="data-description">Population and elevation context</div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>&copy; 2025 Team CodeNebula - NASA Space Apps Challenge 2025</p>
+    </footer>
+</body>
+</html>

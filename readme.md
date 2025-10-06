@@ -143,7 +143,7 @@ Pollution cluster maps, exposure summaries, and AI briefs linking pollution with
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/<your-username>/urbanalysis.git
+   git clone https://github.com/IamDipankar/urbanalysis.git
    cd urbanalysis
    ```
 
@@ -191,7 +191,7 @@ Pollution cluster maps, exposure summaries, and AI briefs linking pollution with
 
 | Role | Name | Responsibilities |
 |------|------|------------------|
-| **Team Lead** | Abrar Faiaz | Data pipeline generation, processing, prompt engineering, planning |
+| **Team Lead** | Abrar Faiaz | Planning, Data pipeline generation, processing, prompt engineering |
 | **Web Developer** | Dipankar Mitra | Web application development, AI integration |
 | **Urban Analyzer** | Apurbo Kumar | Policy searching, urban planning strategies |
 
