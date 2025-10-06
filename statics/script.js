@@ -1,4 +1,10 @@
 document.addEventListener('DOMContentLoaded', function() {
+    // Navigation elements
+    const navbar = document.getElementById('navbar');
+    const navToggle = document.getElementById('navToggle');
+    const navMenu = document.getElementById('navMenu');
+    const navLinks = document.querySelectorAll('.nav-link');
+
     // Get DOM elements
     const selectAllBtn = document.getElementById('selectAllBtn');
     const runAnalysisBtn = document.getElementById('runAnalysisBtn');
@@ -24,6 +30,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load districts on page load
     loadDistricts();
 
+    // Navigation functionality
+    initializeNavigation();
+
     // Event listeners
     selectAllBtn.addEventListener('click', toggleSelectAll);
     runAnalysisBtn.addEventListener('click', runAnalysis);
@@ -37,6 +46,65 @@ document.addEventListener('DOMContentLoaded', function() {
             updateRunAnalysisButton();
         });
     });
+
+    // Navigation Functions
+    function initializeNavigation() {
+        // Handle scroll events for navbar transformation
+        window.addEventListener('scroll', handleNavbarScroll);
+        
+        // Handle mobile menu toggle
+        if (navToggle) {
+            navToggle.addEventListener('click', toggleMobileMenu);
+        }
+        
+        // Close mobile menu when clicking on links
+        navLinks.forEach(link => {
+            link.addEventListener('click', closeMobileMenu);
+        });
+        
+        // Close mobile menu when clicking outside
+        document.addEventListener('click', function(event) {
+            if (!navbar.contains(event.target)) {
+                closeMobileMenu();
+            }
+        });
+
+        // Handle smooth scrolling for internal links
+        navLinks.forEach(link => {
+            if (link.getAttribute('href').startsWith('#')) {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const targetId = this.getAttribute('href').substring(1);
+                    const targetElement = document.getElementById(targetId);
+                    if (targetElement) {
+                        targetElement.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                });
+            }
+        });
+    }
+
+    function handleNavbarScroll() {
+        const scrollY = window.scrollY;
+        if (scrollY > 50) {
+            navbar.classList.add('scrolled');
+        } else {
+            navbar.classList.remove('scrolled');
+        }
+    }
+
+    function toggleMobileMenu() {
+        navToggle.classList.toggle('active');
+        navMenu.classList.toggle('active');
+    }
+
+    function closeMobileMenu() {
+        navToggle.classList.remove('active');
+        navMenu.classList.remove('active');
+    }
 
 
     // WebSocket functions

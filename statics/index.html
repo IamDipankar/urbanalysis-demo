@@ -9,6 +9,39 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="nav-icon">
+                    <i class="fas fa-globe-americas"></i>
+                </div>
+                <span class="nav-title">URBANALYSIS</span>
+            </div>
+            
+            <div class="nav-menu" id="navMenu">
+                <a href="#how-it-works" class="nav-link">
+                    <i class="fas fa-question-circle"></i>
+                    How it Works
+                </a>
+                <a href="#about-us" class="nav-link">
+                    <i class="fas fa-users"></i>
+                    About Us
+                </a>
+                <a href="https://github.com/IamDipankar/nasa-space-app-web" target="_blank" class="nav-link">
+                    <i class="fab fa-github"></i>
+                    GitHub (View Source)
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="navToggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
     <div class="container">
         <header class="header">
             <div class="header-icon">
@@ -19,19 +52,20 @@
         </header>
 
         <main class="main-content">
-            <div class="analysis-form">
+            <div class="analysis-form" id="analysis-input-section">
                 <div class="form-group">
                     <label for="district" class="form-label">
                         <i class="fas fa-map-marker-alt"></i>
-                        District
+                        District 
                     </label>
+                    
                     <select 
                         id="district" 
                         name="district" 
                         class="form-select" 
                         required
                     >
-                        <option value="">Select a district</option>
+                        <option value="">Select a district of Bangladesh (Others comming soon)</option>
                     </select>
                 </div>
 
@@ -115,6 +149,75 @@
                 </div>
             </div>
         </main>
+
+        <!-- How it Works Section -->
+        <section id="how-it-works" class="info-section">
+            <div class="info-content">
+                <h2 class="section-title">
+                    <i class="fas fa-question-circle"></i>
+                    How it works
+                </h2>
+                <div class="info-grid">
+                    <div class="info-card">
+                        <div class="info-icon">
+                            <i class="fas fa-map-marker-alt"></i>
+                        </div>
+                        <h3>Select Location</h3>
+                        <p>Choose your district and optionally an upazila to focus your analysis on a specific geographic area.</p>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-icon">
+                            <i class="fas fa-check-square"></i>
+                        </div>
+                        <h3>Choose Analysis</h3>
+                        <p>Select from air quality hotspots, urban heat islands, or green access analysis based on your research needs.</p>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <h3>Get Results</h3>
+                        <p>Our AI analyzes satellite data and environmental factors to provide comprehensive urban environmental insights.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- About Us Section -->
+        <section id="about-us" class="info-section">
+            <div class="info-content">
+                <h2 class="section-title">
+                    <i class="fas fa-users"></i>
+                    About Us
+                </h2>
+                <div class="about-content">
+                    <p class="about-text">
+                        We are <strong>Team CodeNebula</strong>, passionate about technological implementations for <strong>urban sustainablity </strong> and the <strong>environment. </strong>
+                    </p>
+                    <p class="about-text">
+                        Our mission is to make complex environmental data accessible and actionable for urban planners, researchers, and citizens who care about sustainable city development.
+                    </p>
+                    <div class="team-features">
+                        <div class="feature">
+                            <i class="fas fa-satellite"></i>
+                            <span>NASA Satellite Data Integration</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-brain"></i>
+                            <span>AI-Powered Analysis</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-leaf"></i>
+                            <span>Environmental Focus</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-city"></i>
+                            <span>Urban Planning Support</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <footer class="footer">
             <p>&copy; 2025 Team CodeNebula</p>
