@@ -598,6 +598,7 @@ def build_map(aoi_bbox, hotspots, selected_cluster_polys, parameters):
 # ------------------ MAIN ------------------
 # @profile
 def run(session_id=None, ee_geometry=None, aoi_bbox=None):
+    print("Started aq hotspot analysis… Session:", session_id)
     print("Initializing Earth Engine…")
     ee_init_headless()
 

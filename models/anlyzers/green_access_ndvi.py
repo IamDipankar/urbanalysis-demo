@@ -561,6 +561,7 @@ def edges_within_time(Gp, edges_gdf, source_node, cutoff_s):
 # gdf = location_gdf
 # @profile
 def run(session_id = None, gdf = None):
+    print("Started green access NDVI analysis. Session ID =", session_id)
     ee_init_headless()
 
     # Soil sources & images
