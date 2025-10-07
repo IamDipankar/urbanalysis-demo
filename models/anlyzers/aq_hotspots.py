@@ -507,7 +507,7 @@ def build_map(aoi_bbox, hotspots, selected_cluster_polys, parameters):
                 btn.innerText = "Generating...";
                 try {
                     response = await fetch(
-                        "https://urbanalysis.earth/llm-inference",
+                        "/llm-inference",
                         {
                             method: "POST",
                             headers: {"Content-Type": "application/json"},
