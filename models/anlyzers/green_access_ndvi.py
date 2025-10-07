@@ -929,7 +929,7 @@ def run(session_id = None, gdf = None):
                     f"& roads ~{road_density if road_density is not None else 'n/a'} km/km² → {density_msg}\n")
         # Map popup (keeps counts)
         description_html = f"""
-        <div style='font-size:12px;line-height:1.35' id = 'popup-desc'>
+        <div style='font-size:12px;line-height:1.35' id = 'popup-desc_<<cid>>'>
             <i>Lat, Lon:</i> {lat:.6f}, {lon:.6f}<br>
             <b>People within 10-min walk:</b> {('{:,}'.format(int(pop_val)) if (DO_POP and pop_val is not None) else 'n/a')}<br>
             <b>Nearby (≤{radius_used} m)</b><br>
@@ -959,62 +959,26 @@ def run(session_id = None, gdf = None):
         </div>
         """
 
-        button_html =  """<center><button id="popup-btn"
+        button_html =  """<center><button id="popup-btn_<<cid>>"
                     style="margin-top:10px; padding:6px 10px; border:none; border-radius:6px;
-                            background:#2563eb; color:white; cursor:pointer; font-size:13px;">
+                            background:#2563eb; color:white; cursor:pointer; font-size:13px;"
+                    onclick="getAiSuggestions(<<cid>>)">
                 Generate AI Suggestions
             </button></center>
 
-            <div id = "ai-answer"> </div>
-
-            <script>
-            (function() {
-                var btn = document.getElementById("popup-btn");
-                var desc = document.getElementById("popup-desc");
-                var aiBox = document.getElementById("ai-answer");
-
-                if (!btn || !desc) {console.log("Button or description not found"); return;}
-
-                btn.addEventListener("click", async function() {
-                    btn.disabled = true;
-                    btn.innerText = "Generating...";
-                    try {
-                        response = await fetch(
-                            "/llm-inference",
-                            {
-                                method: "POST",
-                                headers: {"Content-Type": "application/json"},
-                                body: JSON.stringify({
-                                    prompt: desc.innerHTML,
-                                    type: "uhi"
-                                })
-                            }
-                        );
-
-                        if (!response.ok) {
-                            console.log("Error in response");
-                            aiBox.innerHTML = "<hr><b>AI Suggestions:</b><br>" + content;
-                        } else {
-                            var data = await response.json();
-                            var content = data.response;
-                            aiBox.innerHTML = "<hr><h2>AI Suggestions:</h2><br>" + content;
-                            btn.innerText = "Done";
-                        }
-                    } catch (error) {
-                        aiBox.innerHTML = "<hr><b>AI Suggestions:</b><br>Error during request." + error;
-                    }
-                });
-            })();
-            </script>
+            <div id = "ai-answer_<<cid>>"><<great_blank>></div>
             
-            """
+            """.replace("<<great_blank>>", "&nbsp; "*100 + "<br>"*10)
+        
+        html_code = description_html + button_html
+        html_code = html_code.replace("<<cid>>", str(cid))
 
-        iframe = folium.IFrame(html=description_html + button_html, width=300, height=350)
+        # iframe = folium.IFrame(html=html_code, width=300, height=350)
 
         folium.CircleMarker(
             location=(lat, lon), radius=6, color="#2962FF",
             fill=True, fill_color="#2962FF", fill_opacity=0.95,
-            popup=folium.Popup(iframe, max_width=600),
+            popup=folium.Popup(html_code, max_width=700, max_height=600),
         ).add_to(m)
 
         # CSV row
@@ -1055,6 +1019,47 @@ def run(session_id = None, gdf = None):
     </div>
     """
     m.get_root().html.add_child(folium.Element(legend_html))
+
+    javascript = """<script>
+            function getAiSuggestions(cid) {
+                var btn = document.getElementById("popup-btn_" + cid);
+                var desc = document.getElementById("popup-desc_" + cid);
+                var aiBox = document.getElementById("ai-answer_" + cid);
+
+                if (!btn || !desc) {console.log("Button or description not found"); return;}
+
+                btn.addEventListener("click", async function() {
+                    btn.disabled = true;
+                    btn.innerText = "Generating...";
+                    try {
+                        response = await fetch(
+                            "/llm-inference",
+                            {
+                                method: "POST",
+                                headers: {"Content-Type": "application/json"},
+                                body: JSON.stringify({
+                                    prompt: desc.innerHTML,
+                                    type: "uhi"
+                                })
+                            }
+                        );
+
+                        if (!response.ok) {
+                            console.log("Error in response");
+                            aiBox.innerHTML = "<hr><b>AI Suggestions:</b><br>" + content;
+                        } else {
+                            var data = await response.json();
+                            var content = data.response;
+                            aiBox.innerHTML = "<hr><h2>AI Suggestions:</h2><br>" + content;
+                            btn.innerText = "Done";
+                        }
+                    } catch (error) {
+                        aiBox.innerHTML = "<hr><b>AI Suggestions:</b><br>Error during request." + error;
+                    }
+                });
+            };
+            </script>"""
+    m.get_root().html.add_child(folium.Element(javascript))
     folium.LayerControl(collapsed=False).add_to(m)
 
     out_html = os.path.join("web_outputs", session_id , "green_access.html")

@@ -22,6 +22,7 @@ import random
 
 checker = 0
 signature = random.random() * 1000000
+tokens_used = 0
 
 # Add models directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'models', 'anlyzers'))
@@ -348,6 +349,10 @@ async def llm_inference(request: LLM_Inference_Request):
             system_prompt = groq_api.SYSTEM_PROMPT_AQ
 
     content, prompt_tokens, completion_tokens, total_tokens = groq_api.call_groq_with_system_and_user(system_prompt, prompt, groq_api.MODEL)
+    global tokens_used
+    tokens_used += total_tokens
+    print("Total tokens used so far:", tokens_used)
+
     markdowned = False
     if request.markdown:
         try:
