@@ -213,3 +213,6 @@ __marimo__/
 # google ee
 key.json
 *.json
+
+#web outputs
+web_outputs/
