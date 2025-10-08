@@ -16,7 +16,7 @@ from models.anlyzers import router
 from models.llms import groq_api
 import markdown
 from markdownify import markdownify as md
-from fastapi.middleware.cors import CORSMiddleware
+# from fastapi.middleware.cors import CORSMiddleware
 import random
 
 
@@ -30,14 +30,14 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'models', 'anlyzers'))
 app = FastAPI()
 os.makedirs("web_outputs", exist_ok=True)
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*", "null"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# # Add CORS middleware
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*", "null"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # Mount static files
 app.mount("/statics", StaticFiles(directory="statics"), name="static")
