@@ -93,14 +93,44 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-def request_to_remote(request: AnalysisRequest):
-    response = requests.post(f"{os.getenv('REMOTE_SERVER_URL')}/run-analysis", json=request.model_dump())
+async def request_to_remote(request: AnalysisRequest, tried = 0):
+    try:
+        response = requests.post(f"{os.getenv('REMOTE_SERVER_URL')}/run-analysis", json=request.model_dump())
+    except Exception as e:
+        if tried >= 4:
+            print("Exception. Sending error...")
+            analysis_status[request.session_id]["status"] = "error" + e
+            asyncio.run(manager.send_message(request.session_id, {
+                "type": "error",
+                "message": "Error connecting to remote server. Please try again later." + e
+            }))
+            return
+        else:
+            tried += 1
+            print("Exception. Attempting retry...")
+            await asyncio.sleep(30)
+            await request_to_remote(request, tried)
+            return
+    
     if response.status_code != 200:
-        analysis_status[request.session_id]["status"] = "error"
-        asyncio.run(manager.send_message(request.session_id, {
-            "type": "error",
-            "message": f"Error running analyses: {response.text}"
-        }))
+        if tried >= 4:
+            print("Status error. Sending error...")
+            analysis_status[request.session_id]["status"] = "error"
+            asyncio.run(manager.send_message(request.session_id, {
+                "type": "error",
+                "message": f"Error running analyses: {response.text}"
+            }))
+            return
+        else:
+            tried += 1
+            print("Status error. Attempting retry...")
+            await asyncio.sleep(30)
+            return await request_to_remote(request, tried)
+    if response.status_code == 200:
+        return
+                
+        
+    
 
 @app.get("/")
 async def read_root():
