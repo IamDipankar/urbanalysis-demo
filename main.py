@@ -28,6 +28,7 @@ tokens_used = 0
 sys.path.append(os.path.join(os.path.dirname(__file__), 'models', 'anlyzers'))
 
 app = FastAPI()
+os.makedirs("web_outputs", exist_ok=True)
 
 # Add CORS middleware
 app.add_middleware(
