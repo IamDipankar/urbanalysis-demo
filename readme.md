@@ -22,6 +22,10 @@ It is an intelligent **Smart Urban Planning Web Application** that helps planner
 
 Through the fusion of **Earth Observation (EO)** data from NASA and ESA satellites with **AI-powered analytical frameworks**, the platform enables data-driven, evidence-based, and scalable urban decision-making.
 
+<p align="center">
+  <img src="images/the-problem.png" alt="Architecture Diagram" width="600">
+</p>
+
 ---
 
 ## 🧭 Table of Contents
@@ -48,6 +52,10 @@ Our system transforms complex satellite datasets into actionable, location-speci
 3. **Green Access Analysis** – Quantify vegetation distribution and detect “green space gaps” using Sentinel-2 NDVI and OpenStreetMap park data.
 4. **AI Decision Support** – The system uses a Large Language Model (LLM) to translate technical analyses into human-readable planning advice.
 5. **Interactive Visualization** – Web-based, map-centric interface for planners to explore layers, hotspots, and AI recommendations interactively.
+
+<p align="center">
+  <img src="images/green-access-res.png" alt="Architecture Diagram" width="600">
+</p>
 
 ---
 
@@ -97,6 +105,10 @@ Severity-coded UHI maps (Elevated / High / Severe) with tables showing populatio
 **Output:**
 Pollution cluster maps, exposure summaries, and AI briefs linking pollution with land use and policy interventions .
 
+<p align="center">
+  <img src="images/green-access-res.png" alt="Architecture Diagram" width="600">
+</p>
+
 ---
 
 ## 🛰️ NASA & ESA Data Sources
@@ -122,6 +134,9 @@ Pollution cluster maps, exposure summaries, and AI briefs linking pollution with
 | **OpenStreetMap**                    | Roads, green polygons, land use                        | [https://www.openstreetmap.org/](https://www.openstreetmap.org/)                                                                       |
 | **WorldPop / GHSL / Copernicus DEM** | Population and elevation context                       | [https://www.worldpop.org/](https://www.worldpop.org/)                                                                                 |
 
+<p align="center">
+  <img src="images/data-pipeline.png" alt="Architecture Diagram" width="600">
+</p>
 ---
 
 ## 💻 Local Deployment Guide
