@@ -132,7 +132,7 @@ async def request_to_remote(request: AnalysisRequest, tried = 0):
     if response.status_code == 200:
         while analysis_status[request.session_id]["status"] == "running" and datetime.now().timestamp() < end_time:
             await asyncio.sleep(120)
-            request.get(f"{os.getenv('REMOTE_SERVER_URL')}")
+            requests.get(f"{os.getenv('REMOTE_SERVER_URL')}")
                 
         
     
