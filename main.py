@@ -94,6 +94,8 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 async def request_to_remote(request: AnalysisRequest, tried = 0):
+    start_time = datetime.now().timestamp()
+    end_time = start_time + 60 * 60  # 1 hour from start
     try:
         response = requests.post(f"{os.getenv('REMOTE_SERVER_URL')}/run-analysis", json=request.model_dump())
     except Exception as e:
@@ -128,7 +130,9 @@ async def request_to_remote(request: AnalysisRequest, tried = 0):
             await asyncio.sleep(30)
             return await request_to_remote(request, tried)
     if response.status_code == 200:
-        return
+        while analysis_status[request.session_id]["status"] == "running" and datetime.now().timestamp() < end_time:
+            await asyncio.sleep(120)
+            request.get(f"{os.getenv('REMOTE_SERVER_URL')}")
                 
         
     
