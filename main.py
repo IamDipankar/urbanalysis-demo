@@ -97,6 +97,7 @@ async def request_to_remote(request: AnalysisRequest, tried = 0):
     try:
         response = requests.post(f"{os.getenv('REMOTE_SERVER_URL')}/run-analysis", json=request.model_dump())
     except Exception as e:
+        print(str(e))
         if tried >= 4:
             print("Exception. Sending error...")
             analysis_status[request.session_id]["status"] = "error" + e
