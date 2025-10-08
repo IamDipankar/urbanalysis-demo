@@ -1,23 +1,23 @@
-from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks,status
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks,status, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import asyncio
-import threading
 import json
-import os, base64, tempfile
+import os
 import sys
-import importlib.util
-import time
 from datetime import datetime
-from typing import List, Dict, Optional
-import uuid
-from models.anlyzers import router
+from typing import List, Dict
+from models.anlyzers import router_lite
 from models.llms import groq_api
 import markdown
 from markdownify import markdownify as md
 # from fastapi.middleware.cors import CORSMiddleware
 import random
+import requests
+import dotenv
+
+dotenv.load_dotenv()
 
 
 checker = 0
@@ -47,6 +47,8 @@ app.mount("/web_outputs", StaticFiles(directory="web_outputs"), name="web_output
 active_connections: Dict[str, WebSocket] = {}
 analysis_status: Dict[str, Dict] = {}
 
+completion_status: Dict[str, List[str]] = {}
+
 # Pydantic models
 class AnalysisRequest(BaseModel):
     upazila: str | None = None
@@ -59,6 +61,15 @@ class LLM_Inference_Request(BaseModel):
     systemPrompt: str | None = None
     type : str | None = None
     markdown : bool = True
+
+class RemoteAnalysisResponse(BaseModel):
+    session_id: str
+    analysis_type: str
+    success : bool
+
+class RemoteTaskStarted(BaseModel):
+    session_id: str
+    analyses_name : str
 
 class ConnectionManager:
     def __init__(self):
@@ -82,102 +93,14 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-analysis_type_modules = {
-    "aq_hotspots": "aq_hotspots.py",
-    "uhi_hotspots": "uhi_hotspots.py",
-    "green_access": "green_access_ndvi.py"
-}
-
-def run_single_analysis(analysis_type: str, session_id: str, ee_geometry, aoi_bbox, gdf):
-    """Run a single analysis in a separate thread"""
-    global analysis_type_modules
-    try:
-        # Send starting message
-        asyncio.run(manager.send_message(session_id, {
-            "type": "analysis_start",
-            "analysis": analysis_type,
-            "message": f"Starting {analysis_type.replace('_', ' ').title()} analysis..."
-        }))
-        
-        # Import and run the analysis module
-        module_path = os.path.join("models", "anlyzers", analysis_type_modules[analysis_type])
-        spec = importlib.util.spec_from_file_location(analysis_type, module_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        if analysis_type == "green_access":
-            module.run(session_id, gdf)
-        # Run the main function
-        else:
-            module.run(session_id, ee_geometry, aoi_bbox)
-        
-        # Send completion message
-        asyncio.run(manager.send_message(session_id, {
-            "type": "analysis_complete",
-            "analysis": analysis_type,
-            "message": f"{analysis_type.replace('_', ' ').title()} analysis completed!"
-        }))
-        
-        return True
-        
-    except Exception as e:
-        # Send error message
-        asyncio.run(manager.send_message(session_id, {
-            "type": "analysis_error",
-            "analysis": analysis_type,
-            "message": f"Error in {analysis_type}: {str(e)}"
-        }))
-        return False
-
-def run_analyses_background(analyses: List[str], session_id: str, district: str, upazila: str = None):
-    """Run multiple analyses in sequence"""
-    # Extracting location
-    ee_geometry, aoi_bbox = router.get_polygon_and_bbox(district, upazila)
-    gdf = router.get_gdf(district, upazila)
-    try:
-        completed_analyses = []
-        total_analyses = len(analyses)
-        
-        for i, analysis in enumerate(analyses):
-            # Update progress
-            asyncio.run(manager.send_message(session_id, {
-                "type": "progress_update",
-                "current": i + 1,
-                "total": total_analyses,
-                "message": f"Running {analysis.replace('_', ' ').title()} ({i + 1}/{total_analyses})"
-            }))
-            
-            success = run_single_analysis(analysis, session_id, ee_geometry, aoi_bbox, gdf)
-            if success:
-                completed_analyses.append(analysis)
-            
-            # Add a small delay between analyses
-            time.sleep(1)
-        
-        # Send final completion message
-        asyncio.run(manager.send_message(session_id, {
-            "type": "all_analyses_complete",
-            "completed_analyses": completed_analyses,
-            "message": f"All analyses completed! {len(completed_analyses)}/{total_analyses} successful."
-        }))
-        
-        # Update global status
-        analysis_status[session_id] = {
-            "status": "completed",
-            "completed_analyses": completed_analyses,
-            "requested_analyses": analyses,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        asyncio.run(manager.send_message(session_id, {
+def request_to_remote(request: AnalysisRequest):
+    response = requests.post(f"{os.getenv('REMOTE_SERVER_URL')}/run-analysis", json=request.model_dump())
+    if response.status_code != 200:
+        analysis_status[request.session_id]["status"] = "error"
+        asyncio.run(manager.send_message(request.session_id, {
             "type": "error",
-            "message": f"Error running analyses: {str(e)}"
+            "message": f"Error running analyses: {response.text}"
         }))
-        analysis_status[session_id] = {
-            "status": "error",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
 
 @app.get("/")
 async def read_root():
@@ -243,7 +166,7 @@ async def run_analysis(request: AnalysisRequest, background_tasks: BackgroundTas
     await asyncio.sleep(1)
     
     # Start analyses in background
-    background_tasks.add_task(run_analyses_background, request.analyses, request.session_id, request.district, request.upazila)
+    background_tasks.add_task(request_to_remote, request)
     
     return {
         "message": "Analysis started successfully",
@@ -323,7 +246,7 @@ async def read_health():
 async def get_districts():
     """Get list of available districts"""
     try:
-        districts = router.get_districts_list()
+        districts = router_lite.get_districts_list()
         return {"districts": districts}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching districts: {str(e)}")
@@ -332,7 +255,7 @@ async def get_districts():
 async def get_upazilas(district_name: str):
     """Get list of upazilas for a specific district"""
     try:
-        upazilas = router.get_upazilas_by_district(district_name)
+        upazilas = router_lite.get_upazilas_by_district(district_name)
         return {"upazilas": upazilas}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching upazilas: {str(e)}")
@@ -379,3 +302,29 @@ async def checker_function():
 @app.get("/how-it-works")
 async def how_it_works():
     return FileResponse("statics/how-it-works.html")
+
+
+
+@app.post("/xxd-completed-analysis-from-remote-server")
+async def analysis_response_from_remote(files: List[UploadFile] = File(None), session_id: str = Form(...)):
+    if session_id not in analysis_status:
+        raise HTTPException(status_code=404, detail="Analysis session not found")
+    os.makedirs(os.path.join("web_outputs", session_id), exist_ok=True)
+    for file in files:
+        file_location = os.path.join("web_outputs", session_id, file.filename)
+        with open(file_location, 'wb') as out_file:
+            content = await file.read()  # async read
+            out_file.write(content)
+
+
+@app.post("/xxd-send-websocket-message-to-the-client")
+async def send_websocket_message_to_client(message: str, session_id: str):
+    await manager.send_message(session_id, json.loads(message))
+
+
+@app.post("/xxd-update-analysis-status")
+async def update_analysis_status(session_id: str, status: str):
+    if session_id not in analysis_status:
+        raise HTTPException(status_code=404, detail="Analysis session not found")
+    analysis_status[session_id] = json.loads(status)
+    return {"message": "Status updated successfully"}

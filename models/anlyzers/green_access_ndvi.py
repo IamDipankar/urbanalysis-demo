@@ -968,7 +968,7 @@ def run(session_id = None, gdf = None):
 
             <div id = "ai-answer_<<cid>>"><<great_blank>></div>
             
-            """.replace("<<great_blank>>", "&nbsp; "*100 + "<br>"*10)
+            """.replace("<<great_blank>>", "<br>"*10)
         
         html_code = description_html + button_html
         html_code = html_code.replace("<<cid>>", str(cid))

@@ -460,7 +460,7 @@ def build_map(aoi_bbox, hotspots, selected_cluster_polys, parameters):
 
         <div id = "ai-answer_<<cid>>"> <<great_blank>> </div>
 
-        """.replace("<<cid>>", str(cid)).replace("<<great_blank>>", "&nbsp; "*100 + "<br>"*10)
+        """.replace("<<cid>>", str(cid)).replace("<<great_blank>>", "<br>"*10)
 
 
         parameters_html = '<div id = "popup-desc_<<cid>>">'.replace("<<cid>>", str(cid)) + markdown.markdown(parameters[cid], extensions=['extra', 'toc', 'tables']) + "</div>"
