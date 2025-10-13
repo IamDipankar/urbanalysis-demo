@@ -153,6 +153,11 @@ Pollution cluster maps, exposure summaries, and AI briefs linking pollution with
 
 ---
 
+### Architecture
+The system runs with two backend servers. One liteweight server for the UI interface controll and another for running the analysis. The UI server communicates with the analysis server.
+
+Client <---> UI Server <---> Analysis server
+
 ### ⚙️ Setup Instructions
 
 1. **Clone the repository**
@@ -188,13 +193,23 @@ Pollution cluster maps, exposure summaries, and AI briefs linking pollution with
    EE_SERVICE_ACCOUNT=<Your earth engine service account>
    EE_KEY_B64=<Your earth engine key json file base64 encrypted>
    GROQ_API_KEY=<Your groq api key>
+   REMOTE_SERVER_URL=<Remote server / Analysis server URL>
+   MAIN_SERVER_URL=<Main server / UI server URL>
    ```
 
 6. **Run the application**
 
    ```bash
-   uvicorn main:app --host 0.0.0.0 --workers 1
+   uvicorn main:app --host 0.0.0.0 --workers 1 --port <Give a port name>
    ```
+   Open a different terminal instance and run:
+
+   ```bash
+   uvicorn remotemain:app --host 0.0.0.0 --workers 1 --port <Different port name>
+   ```
+
+   Here an url will be generated for each server depending on port and host. This urls should match with the `.env` file.
+
 
 6. **Load the web app**
    Click on the link shown in your console (eg. `http://127.0.0.1:8000` or `localhost:8000`) to open this site on your browser.
