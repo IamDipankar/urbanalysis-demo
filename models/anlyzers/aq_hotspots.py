@@ -10,6 +10,7 @@
 # named industries/point sources inside). Speed-optimized.
 
 import markdown
+import json
 from models.llms import groq_api
 # from memory_profiler import profile
 
@@ -601,10 +602,23 @@ def build_map(aoi_bbox, hotspots, selected_cluster_polys, parameters):
 
 # ------------------ MAIN ------------------
 # @profile
-def run(session_id=None, ee_geometry=None, aoi_bbox=None):
-    print("Started aq hotspot analysis… Session:", session_id)
-    print("Initializing Earth Engine…")
+def run(session_id=None, ee_geometry=None, aoi_bbox=None, geoJson = None):
+    print("Initializing Earth Engine…2")
     ee_init_headless()
+    if geoJson:
+        feature = geoJson if geoJson.get('type') == 'Feature' else geoJson.get('features', [])[0]
+        if not feature:
+            raise ValueError("Invalid GeoJSON provided.")
+        ee_geometry = ee.Geometry(feature.get('geometry'))
+        ee_bbox = ee_geometry.bounds().getInfo().get('coordinates', None)
+        if ee_bbox:
+            ee_bbox = ee_bbox[0]
+            longs, lats = zip(*ee_bbox)
+            ee_bbox = [min(longs), min(lats), max(longs), max(lats)]
+
+        print(f"BBOX from GeoJSON: {ee_bbox}")
+        
+    print("Started aq hotspot analysis… Session:", session_id)
 
     aoi = ee_geometry or ee.Geometry.Rectangle(AOI_BBOX)
     start_iso, end_iso = str(START), str(END)
@@ -787,6 +801,92 @@ def run(session_id=None, ee_geometry=None, aoi_bbox=None):
     os.makedirs(os.path.dirname(html_output_dir), exist_ok=True)
     m.save(html_output_dir)
     print(f"\n✅ Saved: {html_output_dir}")
+
+    # ---------- Build client payload for Leaflet rendering ----------
+    try:
+        bbox = aoi_bbox or AOI_BBOX
+        lon_c = (bbox[0] + bbox[2]) / 2.0
+        lat_c = (bbox[1] + bbox[3]) / 2.0
+
+        # Cluster polygons
+        polygon_features = []
+        for rank, (cid, poly) in enumerate(selected, start=1):
+            desc_md = cid_wise_descriptions.get(cid, "")
+            desc_html = markdown.markdown(desc_md, extensions=['extra', 'toc', 'tables']) if desc_md else ""
+            popup_html = f"<div id=\"popup-desc_{cid}\">{desc_html}</div>"
+            feature = {
+                "type": "Feature",
+                "properties": {
+                    "cid": cid,
+                    "rank": rank,
+                    "name": f"Hot zone #{rank} (cluster {cid})",
+                    "style": {
+                        "color": "#673ab7",
+                        "weight": 3,
+                        "fillColor": "#673ab7",
+                        "fillOpacity": 0.10,
+                    },
+                    "tooltip": f"Hot zone #{rank} (cluster {cid})",
+                    "popup_html": popup_html,
+                },
+                "geometry": poly.__geo_interface__,
+            }
+            polygon_features.append(feature)
+        polygons_fc = {"type": "FeatureCollection", "features": polygon_features}
+
+        # Hotspot points
+        point_features = []
+        kept_cids = {cid for cid, _ in selected}
+        for hp in hotspots:
+            cid = hp.get("_cid")
+            if cid not in kept_cids:
+                continue
+            tooltip_text = "AQ hotspot"
+            popup_html = (
+                f"<b>AQ hotspot</b><br>Combined z: {hp.get('aq_index_z', 0):.2f}<br>"
+                f"NO2 z: {hp.get('no2_z', 0):.2f} | PM25 z: {hp.get('pm25_z', 0):.2f} | CO z: {hp.get('co_z', 0):.2f}"
+            )
+            feature = {
+                "type": "Feature",
+                "properties": {
+                    "cid": cid,
+                    "marker": {
+                        "type": "circle",
+                        "radius": 7,
+                        "color": "#d32f2f",
+                        "fill": True,
+                        "fillColor": "#d32f2f",
+                        "fillOpacity": 0.9,
+                    },
+                    "tooltip": tooltip_text,
+                    "popup_html": popup_html,
+                },
+                "geometry": {"type": "Point", "coordinates": [hp["lon"], hp["lat"]]},
+            }
+            point_features.append(feature)
+        hotspots_fc = {"type": "FeatureCollection", "features": point_features}
+
+        payload = {
+            "meta": {"center": [lat_c, lon_c], "zoom": 12, "tiles": "cartodbpositron"},
+            "layers": {"clusters": polygons_fc, "hotspots": hotspots_fc},
+            "legend": {
+                "title": "Air Quality Hotspots (last 60 days)",
+                "colors": {"envelope": "#673ab7", "hotspot": "#d32f2f"},
+            },
+        }
+
+        # Save JSON alongside HTML for debugging/inspection
+        try:
+            json_output_dir = f'web_outputs/{session_id}/aq_hotspots.json' if session_id else 'web_outputs/temp/aq_hotspots.json'
+            with open(json_output_dir, 'w', encoding='utf-8') as jf:
+                json.dump(payload, jf, ensure_ascii=False)
+        except Exception:
+            pass
+
+        return payload
+    except Exception as _:
+        # If anything fails during payload generation, just return None to keep compatibility
+        return None
 
 # if __name__ == "__main__":
 #     run("aaaa", location_ee_geometry, location_bbox)

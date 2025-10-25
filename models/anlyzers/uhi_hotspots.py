@@ -2,6 +2,8 @@ import os, tempfile, base64
 import math
 from datetime import date, timedelta
 
+import json
+
 import ee
 import folium
 from folium.plugins import MiniMap, Fullscreen, MousePosition, MeasureControl
@@ -550,13 +552,222 @@ def build_map(aoi_bbox, hotspots, selected_cluster_polys, parameters):
     folium.LayerControl(collapsed=False).add_to(m)
     return m
 
+
+def build_leaflet_json(
+    aoi_bbox,
+    hotspots,
+    selected_cluster_polys,
+    parameters,
+    *,
+    colors=None,
+    thresholds=None,
+    zoom_start=12,
+    days_back=None,
+    return_string=False
+):
+    """
+    Build a JSON payload for client-side Leaflet rendering.
+
+    Args:
+        aoi_bbox: [minLon, minLat, maxLon, maxLat]
+        hotspots: iterable of dicts with keys:
+            - "lat", "lon", "lst_c", "lst_z", "_cid"
+        selected_cluster_polys: iterable of (cid, poly) where `poly` has __geo_interface__
+        parameters: dict mapping cid -> markdown string (already in your code)
+        colors: dict with keys: "envelope", "severe", "high", "elev"
+        thresholds: dict with keys: "SEVERE_Z", "HIGH_Z", "ELEV_Z"
+        zoom_start: initial integer zoom for client
+        days_back: optional int for legend
+        return_string: if True returns a JSON string; otherwise returns a dict
+
+    Returns:
+        dict (JSON-serializable) or JSON string if return_string=True
+    """
+
+    # ---- sensible defaults (override by passing colors/thresholds) ----
+    colors = colors or {
+        "envelope": "#2563eb",  # polygons
+        "severe":   "#d62728",
+        "high":     "#ff7f0e",
+        "elev":     "#2ca02c",
+    }
+    thresholds = thresholds or {
+        "SEVERE_Z": 2.5,
+        "HIGH_Z":   1.5,
+        "ELEV_Z":   1.0,
+    }
+
+
+    # ---- map center from bbox ----
+    lon_c = (aoi_bbox[0] + aoi_bbox[2]) / 2.0
+    lat_c = (aoi_bbox[1] + aoi_bbox[3]) / 2.0
+
+    # --------------------------
+    # Polygons (clusters) layer
+    # --------------------------
+    polygon_features = []
+    for rank, (cid, poly) in enumerate(selected_cluster_polys, start=1):
+        # Build the same popup content you had in Folium (Markdown -> HTML)
+        tags_html = f"""
+            <div style="margin-bottom: 0.5em;">
+              <span style="background:#007bff;color:white;padding:3px 7px;border-radius:5px;margin-right:5px;">
+                Cluster ID: {cid}
+              </span>
+              <span style="background:#28a745;color:white;padding:3px 7px;border-radius:5px;">
+                Rank: {rank}
+              </span>
+            </div>
+        """
+
+        parameters_html = (
+            f'<div id="popup-desc_{cid}">'
+            + markdown.markdown(parameters.get(cid, ""), extensions=["extra", "toc", "tables"])
+            + "</div>"
+        )
+
+        button_html = (
+            f'<center><button id="popup-btn_{cid}" '
+            'style="margin-top:10px; padding:6px 10px; border:none; border-radius:6px;'
+            'background:#2563eb; color:white; cursor:pointer; font-size:13px;" '
+            f'onclick="getAiSuggestions({cid});">'
+            'Generate AI Suggestions'
+            '</button></center>'
+            f'<div id="ai-answer_{cid}"><br><br><br><br><br><br><br><br><br><br></div>'
+        )
+
+        popup_html = tags_html + parameters_html + button_html
+        tooltip_text = f"Hot zone #{rank} (cluster {cid})"
+
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "cid": cid,
+                "rank": rank,
+                "name": tooltip_text,
+                # Leaflet path options (Polygon)
+                "style": {
+                    "color": colors["envelope"],
+                    "weight": 3,
+                    "fillColor": colors["envelope"],
+                    "fillOpacity": 0.10,
+                },
+                # UI
+                "tooltip": tooltip_text,
+                "popup_html": popup_html,
+            },
+            "geometry": poly.__geo_interface__,  # GeoJSON geometry dict
+        }
+        polygon_features.append(feature)
+
+    polygons_fc = {
+        "type": "FeatureCollection",
+        "features": polygon_features,
+    }
+
+    # --------------------------
+    # Hotspots (points) layer
+    # --------------------------
+    kept_cids = {cid for cid, _ in selected_cluster_polys}
+    point_features = []
+    for hp in hotspots:
+        cid = hp.get("_cid")
+        if cid not in kept_cids:
+            continue
+        sev = severity_from_z(hp.get("lst_z"))
+        if sev is None:
+            continue
+
+        color = colors[sev]
+        radius = 6 if sev == "elev" else (8 if sev == "high" else 10)
+
+        tooltip_text = f"{sev.upper()} UHI hotspot"
+        popup_html = (
+            f"<b>{sev.upper()} UHI hotspot</b><br>"
+            f"Surface temp (day): {hp.get('lst_c', float('nan')):.1f} °C<br>"
+            f"Vs city typical: {z_to_level_text(hp.get('lst_z'))}"
+        )
+
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "cid": cid,
+                "severity": sev,
+                # Leaflet CircleMarker options
+                "marker": {
+                    "type": "circle",         # hint for client
+                    "radius": radius,
+                    "color": color,
+                    "fill": True,
+                    "fillColor": color,
+                    "fillOpacity": 0.95,
+                },
+                "tooltip": tooltip_text,
+                "popup_html": popup_html,
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [hp["lon"], hp["lat"]],
+            },
+        }
+        point_features.append(feature)
+
+    hotspots_fc = {
+        "type": "FeatureCollection",
+        "features": point_features,
+    }
+
+    # --------------------------
+    # Legend/meta (optional)
+    # --------------------------
+    payload = {
+        "meta": {
+            "center": [lat_c, lon_c],
+            "zoom": zoom_start,
+            "tiles": "cartodbpositron",
+        },
+        "layers": {
+            "clusters": polygons_fc,
+            "hotspots": hotspots_fc,
+        },
+        "legend": {
+            "title": "Urban Heat Island Hotspots" + (f" (last {days_back} days)" if days_back else ""),
+            "colors": {
+                "severe": colors["severe"],
+                "high": colors["high"],
+                "elev": colors["elev"],
+                "envelope": colors["envelope"],
+            },
+            "thresholds": thresholds,
+        },
+        # optional: the client can include this JS function; we name it here for clarity
+        "actions": {
+            "ai_suggestion_handler": "getAiSuggestions"
+        }
+    }
+
+    return json.dumps(payload, ensure_ascii=False) if return_string else payload
+
+
 # ------------------ MAIN ------------------
 # def run(session_id = None, ee_geometry = None, ee_bbox = None):
 # @profile
-def run(session_id, ee_geometry, ee_bbox):
-    print("Started UHI hotspot analysis… Session:", session_id)
-    print("Initializing Earth Engine…")
+def run(session_id, ee_geometry = None, ee_bbox = None, geoJson = None):
+    print("Initializing Earth Engine…2")
     ee_init_headless()
+    if geoJson:
+        feature = geoJson if geoJson.get('type') == 'Feature' else geoJson.get('features', [])[0]
+        if not feature:
+            raise ValueError("Invalid GeoJSON provided.")
+        ee_geometry = ee.Geometry(feature.get('geometry'))
+        ee_bbox = ee_geometry.bounds().getInfo().get('coordinates', None)
+        if ee_bbox:
+            ee_bbox = ee_bbox[0]
+            longs, lats = zip(*ee_bbox)
+            ee_bbox = [min(longs), min(lats), max(longs), max(lats)]
+
+        print(f"BBOX from GeoJSON: {ee_bbox}")
+
+    print("Started UHI hotspot analysis… Session:", session_id)
     aoi = ee_geometry
     start_iso, end_iso = str(START), str(END)
     print(f"AOI: given | Window: {start_iso} → {end_iso}")
@@ -907,8 +1118,10 @@ def run(session_id, ee_geometry, ee_bbox):
 
     # Map (Top-3 only)
 
+    description_json = build_leaflet_json(ee_bbox, hotspots, selected, parameters)
     m = build_map(ee_bbox, hotspots, selected, parameters)
     output_path = 'web_outputs/{session_id}/uhi_hotspots.html'.format(session_id=session_id)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     m.save(output_path)
     print(f"\n✅ Saved UHI map to: {output_path}\nOpen in your browser to explore.")
+    return description_json

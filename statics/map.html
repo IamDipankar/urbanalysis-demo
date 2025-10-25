@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        #map {
+            top: 0; 
+            bottom: 0; 
+            left: 0; 
+            right: 0; 
+            height: 100vh; 
+            width: 100%;
+            position: relative;
+            z-index: 1; /* keep map below navbar & menus */
+        }
+
+        /* Ensure navbar & dropdown are always above map and controls */
+    .navbar { z-index: 10000 !important; position: sticky; top: 0; background:#ffffff !important; color:#0f172a; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+    .navbar .nav-link { color:#0f172a !important; }
+    .navbar .nav-title { color:#0f172a !important; }
+    .navbar .nav-icon { color:#0f172a !important; }
+        .nav-menu.active { z-index: 20000 !important; position: relative; }
+
+        /* Leaflet controls below navbar/menu */
+        .leaflet-control-container { z-index: 500; }
+
+        .leaflet-control.custom-panel {
+            background:#fff; border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,.15);
+            padding:0; width:280px; max-width:80vw; overflow:hidden; max-height:95vh;
+            font-family: 'Inter', sans-serif;
+            color:#0f172a; /* ensure dark text on white background */
+        }
+        /* Ensure all text inside custom panels is dark */
+        .leaflet-control.custom-panel *,
+        #resultsLegendBox *,
+        #resultsToggleBox * {
+            color:#0f172a !important;
+        }
+
+        /* High-contrast header for visibility on all devices */
+        .custom-panel .panel-header {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:.75rem 1rem; font-weight:700; border-bottom:1px solid #e7e9ee;
+            font-size:1.05rem;
+            background:#ffffff;        /* solid background */
+            color:#0f172a;             /* dark text */
+        }
+        .custom-panel .panel-body { padding:1rem; overflow:auto; }
+        .custom-panel.is-hidden { display:none; }
+
+        .panel-body p {
+            font-size:0.9rem;
+            color:#555;
+            margin-bottom:1rem;
+        }
+
+        .checkbox-group {
+            display:flex;
+            align-items:flex-start;
+            margin-bottom:0.75rem;
+            gap:8px;
+        }
+        .checkbox-group input {
+            margin-top:2px;
+            transform:scale(1.2);
+        }
+        .checkbox-group label {
+            cursor:pointer;
+            font-size:0.9rem;
+            color:#333;
+        }
+
+        /* Running indicator & faded labels (NEW) */
+        .running-indicator {
+            margin-left:8px;
+            font-weight:600;
+            font-size:0.85rem;
+            color:#4a6cf7;
+        }
+        .label-faded {
+            opacity:0.5;
+        }
+        .checkbox-hidden {
+            display:none !important;
+        }
+
+        .run-analysis-btn {
+            width:100%;
+            background:#4a6cf7;
+            color:#fff;
+            border:none;
+            border-radius:8px;
+            padding:0.6rem;
+            font-weight:600;
+            cursor:pointer;
+            transition:0.3s;
+            margin-top:0.75rem;
+        }
+        .run-analysis-btn:disabled {
+            background:#b0b0b0;
+            cursor:not-allowed;
+        }
+
+        .cancel-analysis-btn {
+            width:100%;
+            background:#eef0f6;
+            color:#333;
+            border:1px solid #d9ddea;
+            border-radius:8px;
+            padding:0.55rem;
+            font-weight:600;
+            cursor:pointer;
+            transition:0.2s;
+            margin-top:0.5rem;
+            display:none;
+        }
+
+        .status-message {
+            margin-top:0.75rem;
+            font-size:0.85rem;
+            color:#555;
+            display:none;
+        }
+
+        /* Stack top-left controls to the right of the custom panel */
+        .leaflet-left-stack {
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+        }
+        .leaflet-left-stack > .leaflet-control { margin:0; }
+
+        /* When mobile menu is open, hide map controls/panel so dropdown isn't behind them */
+        body.menu-open .leaflet-control-container { display: none; }
+
+        /* Search UI styles */
+        .search-group .search-btn {
+            display:flex; align-items:center; gap:6px;
+            height:36px; padding:0 .9rem; border-radius:6px;
+            border:1px solid #d9ddea; background:#ffffff; color:#0f172a;
+            font-weight:600; cursor:pointer; transition:.2s;
+            box-shadow: 0 1px 0 rgba(0,0,0,.02);
+        }
+        .search-group .search-btn:hover { background:#f5f7fb; }
+        .search-group .search-btn:disabled { opacity:.6; cursor:not-allowed; }
+    </style>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-minimap/dist/Control.MiniMap.min.css" />
+    <link rel="stylesheet" href="styles.d112.css">
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+    <script src="https://unpkg.com/leaflet-minimap/dist/Control.MiniMap.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Font Awesome for icons in navbar -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="nav-icon">
+                    <i class="fas fa-globe-americas"></i>
+                </div>
+                <span class="nav-title">URBANALYSIS</span>
+            </div>
+            
+            <div class="nav-menu" id="navMenu">
+                <a href="/how-it-works" class="nav-link">
+                    <i class="fas fa-question-circle"></i>
+                    How it Works
+                </a>
+                <a href="#about-us" class="nav-link">
+                    <i class="fas fa-users"></i>
+                    About Us
+                </a>
+                <a href="https://github.com/IamDipankar/nasa-space-app-web" target="_blank" class="nav-link">
+                    <i class="fab fa-github"></i>
+                    GitHub (View Source)
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="navToggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div id="map"></div>
+    <script>
+        var map = L.map('map').setView([23.5, 90], 10);
+
+        // const baseTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        //     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        // }).addTo(map);
+
+        // const baseTiles = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+        //     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        // }).addTo(map);
+
+        const baseTiles = L.tileLayer('https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key=ZHQ4MrWHVZTmzqedyvgT&language=en', {
+            attribution: '© MapTiler © OpenStreetMap contributors'
+        }).addTo(map);
+
+
+        // // Always show MiniMap (bottom-right by default)
+        // try {
+        //     const miniTiles = L.tileLayer('https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key=ZHQ4MrWHVZTmzqedyvgT&language=en', {
+        //         attribution: ''
+        //     });
+        //     const miniMap = new L.Control.MiniMap(miniTiles, {
+        //         toggleDisplay: false,
+        //         minimized: false,
+        //         position: 'bottomright'
+        //     }).addTo(map);
+        // } catch (e) {
+        //     console.warn('MiniMap not available:', e);
+        // }
+    </script>
+
+    <!-- Left Panel -->
+    <script>
+        const LeftPanel = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: function () {
+                const container = L.DomUtil.create('div', 'leaflet-control custom-panel');
+                container.innerHTML = `
+                <div class="panel-header">
+                    <span>URBANALYSIS</span>
+                </div>
+                <div class="panel-body">
+
+                    <div class="search-group" style="margin-bottom:1rem;">
+                        <label for="placeSearch" style="font-weight:600;">Search a place or boundary or draw a boundery using polygons</label>
+                        <div style="display:flex;gap:6px;margin-top:6px;">
+                            <input id="placeSearch" type="text" placeholder="City, district, place..." 
+                                   style="flex:1;padding:.5rem;border:1px solid #d9ddea;border-radius:6px;">
+                            <button id="placeSearchBtn" class="search-btn" style="width:auto;">
+                                <i class="fas fa-search"></i><span>Search</span>
+                            </button>
+                        </div>
+                        <div id="placeSearchResults" 
+                             style="margin-top:.5rem;max-height:160px;overflow:auto;border:1px solid #e7e9ee;border-radius:6px;display:none;"></div>
+                        <small style="display:block;margin-top:.35rem;color:#555;">Tip: Selecting a result will draw its boundary area. <br> You can also use the polygon, rectange and circle button on just right to draw an area.</small>
+                    </div>
+
+                    <div class="checkbox-group" data-id="aq_hotspots">
+                        <input type="checkbox" id="aq_hotspots" value="aq_hotspots">
+                        <label for="aq_hotspots">Air Quality Hotspots</label>
+                    </div>
+
+                    <div class="checkbox-group" data-id="uhi_hotspots">
+                        <input type="checkbox" id="uhi_hotspots" value="uhi_hotspots">
+                        <label for="uhi_hotspots">Urban Heat Islands</label>
+                    </div>
+
+                    <div class="checkbox-group" data-id="green_access">
+                        <input type="checkbox" id="green_access" value="green_access">
+                        <label for="green_access">Green Access Analysis</label>
+                    </div>
+
+                    <button id="runAnalysisBtn" class="run-analysis-btn" disabled>
+                        <span class="btn-text">Run Analysis</span>
+                        <span class="btn-loading" style="display:none;">
+                            <i class="fas fa-spinner fa-spin"></i> Analyzing...
+                        </span>
+                    </button>
+
+                    <button id="cancelAnalysisBtn" class="cancel-analysis-btn">Cancel Analysis</button>
+
+                    <div id="statusMessage" class="status-message">
+                        <i class="fas fa-clock"></i> The analysis may take a while. Hold tight...
+                    </div>
+                </div>
+                `;
+                L.DomEvent.disableClickPropagation(container);
+                L.DomEvent.disableScrollPropagation(container);
+                return container;
+            }
+        });
+
+        new LeftPanel().addTo(map);
+    </script>
+    <!-- Place Search Logic -->
+    <script>
+        // Simple Nominatim search to fetch boundary polygons and draw as AOI
+        function setupPlaceSearch() {
+            const input = document.getElementById('placeSearch');
+            const btn = document.getElementById('placeSearchBtn');
+            const resultsBox = document.getElementById('placeSearchResults');
+            if (!input || !btn || !resultsBox) return;
+
+            function hasPolygon(item) {
+                const g = item && item.geojson;
+                const t = g && g.type;
+                return t === 'Polygon' || t === 'MultiPolygon';
+            }
+
+            function isBoundaryLike(item) {
+                const cls = (item && item.class) || '';
+                const typ = (item && item.type) || '';
+                // Keep administrative boundaries and place boundaries, only when polygonal
+                const boundaryClass = cls === 'boundary' || typ === 'administrative';
+                const placeClass = cls === 'place';
+                return (boundaryClass || placeClass) && hasPolygon(item);
+            }
+
+            async function doSearch() {
+                const q = (input.value || '').trim();
+                if (q.length < 3) {
+                    resultsBox.style.display = 'none';
+                    resultsBox.innerHTML = '';
+                    return;
+                }
+                // Show searching state
+                resultsBox.style.display = 'block';
+                resultsBox.innerHTML = '<div style="padding:.5rem;color:#555;">Searching…</div>';
+                try {
+                    const url = `https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1&addressdetails=1&extratags=1&limit=12&q=${encodeURIComponent(q)}`;
+                    const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                    if (!resp.ok) throw new Error('Search failed');
+                    let data = await resp.json();
+                    if (!Array.isArray(data)) data = [];
+                    // Only keep boundary-like polygon results
+                    data = data.filter(isBoundaryLike);
+                    if (data.length === 0) {
+                        resultsBox.innerHTML = '<div style="padding:.5rem;color:#555;">No results found.</div>';
+                        return;
+                    }
+                    // Render result list
+                    resultsBox.innerHTML = '';
+                    data.forEach((item, idx) => {
+                        const row = document.createElement('div');
+                        row.style.padding = '.5rem .6rem';
+                        row.style.cursor = 'pointer';
+                        row.style.borderBottom = '1px solid #eef0f6';
+                        const title = item.display_name || ('Result ' + (idx+1));
+                        const meta = `${(item.type||'').toUpperCase()}${item.class ? ' · ' + item.class : ''}`;
+                        row.innerHTML = `
+                            <div style=\"font-weight:600;\">${title}</div>
+                            <div style=\"font-size:.85rem;color:#555;\">${meta}</div>
+                        `;
+                        row.addEventListener('click', () => {
+                            resultsBox.style.display = 'none';
+                            resultsBox.innerHTML = '';
+                            selectSearchResult(item);
+                        });
+                        resultsBox.appendChild(row);
+                    });
+                    // Add a small dismiss row
+                    const closeRow = document.createElement('div');
+                    closeRow.style.padding = '.4rem .6rem';
+                    closeRow.style.textAlign = 'right';
+                    closeRow.innerHTML = '<button style="padding:.3rem .5rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;">Close</button>';
+                    closeRow.firstChild.addEventListener('click', () => {
+                        resultsBox.style.display = 'none';
+                        resultsBox.innerHTML = '';
+                    });
+                    resultsBox.appendChild(closeRow);
+                } catch (e) {
+                    resultsBox.innerHTML = '<div style="padding:.5rem;color:#b91c1c;">Error during search. Please try again.</div>';
+                }
+            }
+
+            function polygonFromBbox(bbox) {
+                // bbox: [lat_min, lat_max, lon_min, lon_max] (Nominatim)
+                const latMin = parseFloat(bbox[0]);
+                const latMax = parseFloat(bbox[1]);
+                const lonMin = parseFloat(bbox[2]);
+                const lonMax = parseFloat(bbox[3]);
+                const ring = [
+                    [lonMin, latMin],
+                    [lonMin, latMax],
+                    [lonMax, latMax],
+                    [lonMax, latMin],
+                    [lonMin, latMin]
+                ];
+                return { type: 'Polygon', coordinates: [ring] };
+            }
+
+            function selectSearchResult(item) {
+                try {
+                    let geom = item.geojson || null;
+                    if (!geom && item.boundingbox) {
+                        geom = polygonFromBbox(item.boundingbox);
+                    }
+                    if (!geom) return;
+
+                    // Clear any existing AOI then add the new boundary
+                    if (typeof drawnItems !== 'undefined') {
+                        drawnItems.clearLayers();
+                    }
+
+                    // Build editable Leaflet polygon layers from the geometry
+                    let createdLayers = [];
+                    let combinedBounds = null;
+                    try {
+                        L.geoJSON(geom, {
+                            style: { color:'#2b8a3e', weight:2, fillColor:'#66bb6a', fillOpacity:0.2 },
+                            onEachFeature: function(feature, lyr) {
+                                // Only add editable vector layers
+                                if (lyr && typeof drawnItems !== 'undefined') {
+                                    drawnItems.addLayer(lyr);
+                                    createdLayers.push(lyr);
+                                    if (lyr.getBounds) {
+                                        const b = lyr.getBounds();
+                                        combinedBounds = combinedBounds ? combinedBounds.extend(b) : b;
+                                    }
+                                }
+                            }
+                        });
+                    } catch (e) {
+                        // fallback to rectangle if something goes wrong
+                        if (item.boundingbox) {
+                            const latMin = parseFloat(item.boundingbox[0]);
+                            const latMax = parseFloat(item.boundingbox[1]);
+                            const lonMin = parseFloat(item.boundingbox[2]);
+                            const lonMax = parseFloat(item.boundingbox[3]);
+                            const rect = L.polygon([
+                                [latMin, lonMin], [latMax, lonMin], [latMax, lonMax], [latMin, lonMax]
+                            ], { color:'#2b8a3e', weight:2, fillColor:'#66bb6a', fillOpacity:0.2 });
+                            drawnItems.addLayer(rect);
+                            createdLayers.push(rect);
+                            if (rect.getBounds) combinedBounds = rect.getBounds();
+                        }
+                    }
+                    if (createdLayers.length === 0) return;
+
+                    // Set global AOI reference to the FeatureGroup of created layers (ensures toGeoJSON works)
+                    window.layer = L.featureGroup(createdLayers);
+
+                    // Fit bounds to the combined geometry
+                    try { if (combinedBounds) map.fitBounds(combinedBounds, { padding:[20,20] }); } catch(_){ }
+
+                    // Enable Run button if analyses selected
+                    if (typeof updateButtonState === 'function') updateButtonState();
+                } catch (e) {
+                    console.error('Failed to draw selected boundary:', e);
+                }
+            }
+
+            // Expose a global toggle to enable/disable the search UI
+            window.setSearchEnabled = function(enabled) {
+                try {
+                    input.disabled = !enabled;
+                    btn.disabled = !enabled;
+                    if (!enabled) {
+                        resultsBox.style.display = 'none';
+                        resultsBox.innerHTML = '';
+                    }
+                } catch (_) {}
+            };
+
+            btn.addEventListener('click', doSearch);
+            input.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') doSearch();
+            });
+        }
+    </script>
+
+    <!-- Draw Control -->
+    <script>
+        var layer = null;
+        const drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        const drawControl = new L.Control.Draw({
+            edit: { featureGroup: drawnItems },
+            draw: {
+                polygon: true,
+                polyline: false,
+                circle: true,
+                rectangle: true,
+                marker: false,
+                circlemarker: false
+            }
+        });
+        map.addControl(drawControl);
+
+        map.on(L.Draw.Event.CREATED, function (e) {
+            drawnItems.clearLayers();
+            layer = e.layer;
+            drawnItems.addLayer(layer);
+            updateButtonState();
+        });
+
+        const checkboxes = ['aq_hotspots', 'uhi_hotspots', 'green_access'];
+        const runBtn = document.getElementById('runAnalysisBtn');
+        const statusMsg = document.getElementById('statusMessage');
+        const cancelBtn = document.getElementById('cancelAnalysisBtn');
+
+        checkboxes.forEach(id => {
+            document.addEventListener('change', (e) => {
+                if (e.target && e.target.id === id) updateButtonState();
+            });
+        });
+
+        function updateButtonState() {
+            const selected = checkboxes.some(id => document.getElementById(id).checked);
+            runBtn.disabled = !(layer && selected);
+        }
+
+        // --- Helpers to toggle "running..." UI (NEW) ---
+        function clearRunningIndicators() {
+            document.querySelectorAll('.running-indicator').forEach(span => span.remove());
+            document.querySelectorAll('.label-faded').forEach(el => el.classList.remove('label-faded'));
+            document.querySelectorAll('.checkbox-group input').forEach(inp => inp.classList.remove('checkbox-hidden'));
+        }
+
+        function showRunningIndicators() {
+            // Hide all inputs
+            document.querySelectorAll('.checkbox-group input').forEach(inp => inp.classList.add('checkbox-hidden'));
+            // Add "(running...)" to selected; fade others
+            checkboxes.forEach(id => {
+                const group = document.querySelector(`.checkbox-group[data-id="${id}"]`);
+                const input = document.getElementById(id);
+                const label = group.querySelector('label');
+
+                // Ensure no duplicate spans
+                const old = label.querySelector('.running-indicator');
+                if (old) old.remove();
+
+                if (input.checked) {
+                    const span = document.createElement('span');
+                    span.className = 'running-indicator';
+                    span.textContent = '(running...)';
+                    label.appendChild(span);
+                } else {
+                    label.classList.add('label-faded');
+                }
+            });
+        }
+        // ------------------------------------------------
+
+        // Analysis rendering state
+        const analysisLayers = {}; // { analysisType: [leafletLayer,...] }
+        const layerToggles = {}; // checkbox elements for toggling
+        let currentSessionId = null;
+        let es = null; // EventSource
+
+        function clearAnalysisLayers() {
+            Object.values(analysisLayers).forEach(arr => arr.forEach(l => map.removeLayer(l)));
+            for (const k in analysisLayers) delete analysisLayers[k];
+        }
+
+        function ensureResultsToggles() {
+            // Build a small control box for toggling result layers
+            if (document.getElementById('resultsToggleBox')) return;
+            const ResultsToggle = L.Control.extend({
+                options: { position: 'topright' },
+                onAdd: function () {
+                    const c = L.DomUtil.create('div', 'leaflet-control custom-panel');
+                    c.id = 'resultsToggleBox';
+                    c.innerHTML = `
+                        <div class="panel-header"><span>Results</span></div>
+                        <div class="panel-body">
+                            <div id="resultsToggleBody">
+                                <p>Show or hide analysis layers.</p>
+                            </div>
+                            <div id="resultsDetailsBody" style="display:none;"></div>
+                        </div>
+                    `;
+                    L.DomEvent.disableClickPropagation(c);
+                    L.DomEvent.disableScrollPropagation(c);
+                    return c;
+                }
+            });
+            new ResultsToggle().addTo(map);
+        }
+
+        function addToggleForAnalysis(analysisType) {
+            ensureResultsToggles();
+            if (layerToggles[analysisType]) return; // already present
+            const body = document.getElementById('resultsToggleBody');
+            const id = `toggle_${analysisType}`;
+            const nice = analysisType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const wrap = document.createElement('div');
+            wrap.className = 'checkbox-group';
+            wrap.innerHTML = `
+                <input type="checkbox" id="${id}" checked>
+                <label for="${id}">${nice}</label>
+            `;
+            body.appendChild(wrap);
+            const cb = wrap.querySelector('input');
+            layerToggles[analysisType] = cb;
+            cb.addEventListener('change', () => {
+                const visible = cb.checked;
+                (analysisLayers[analysisType] || []).forEach(l => {
+                    if (visible) l.addTo(map); else map.removeLayer(l);
+                });
+            });
+        }
+
+        // --- Selection/highlight state ---
+        let selectedLayerRef = null;
+        const originalStyle = new WeakMap();
+        function highlightLayer(layer) {
+            try {
+                if (!layer) return;
+                if (selectedLayerRef && selectedLayerRef !== layer) {
+                    resetHighlight(selectedLayerRef);
+                }
+                // save original
+                if (!originalStyle.has(layer)) {
+                    const opts = (layer.options && { ...layer.options }) || {};
+                    originalStyle.set(layer, opts);
+                }
+                if (layer.setStyle) {
+                    const isCircle = typeof layer.getRadius === 'function';
+                    if (isCircle) {
+                        const r = layer.getRadius ? layer.getRadius() : 6;
+                        layer.setStyle({ color:'#ff2d55', fillColor:'#ff2d55' });
+                        if (layer.setRadius) layer.setRadius(Math.max(8, r + 3));
+                    } else {
+                        layer.setStyle({ color:'#ff2d55', weight: 4, dashArray: '4,2' });
+                    }
+                }
+                selectedLayerRef = layer;
+            } catch(e) {}
+        }
+        function resetHighlight(layer) {
+            try {
+                if (!layer) return;
+                const orig = originalStyle.get(layer);
+                if (orig && layer.setStyle) {
+                    // radius restore for circle markers
+                    if (typeof layer.getRadius === 'function' && typeof layer.setRadius === 'function') {
+                        if (typeof orig.radius === 'number') layer.setRadius(orig.radius);
+                    }
+                    // color etc
+                    const { color, weight, dashArray, fillColor, fillOpacity, opacity } = orig;
+                    layer.setStyle({ color, weight, dashArray, fillColor, fillOpacity, opacity });
+                }
+                if (selectedLayerRef === layer) selectedLayerRef = null;
+            } catch(e) {}
+        }
+
+        function setResultsMode(mode) {
+            ensureResultsToggles();
+            const listEl = document.getElementById('resultsToggleBody');
+            const detEl = document.getElementById('resultsDetailsBody');
+            if (!listEl || !detEl) return;
+            if (mode === 'details') {
+                listEl.style.display = 'none';
+                detEl.style.display = 'block';
+            } else {
+                detEl.style.display = 'none';
+                listEl.style.display = 'block';
+            }
+        }
+
+        async function showFeatureDetails(analysisType, feature, layer) {
+            try { highlightLayer(layer); } catch(_){}
+            ensureResultsToggles();
+            setResultsMode('details');
+            const detEl = document.getElementById('resultsDetailsBody');
+            if (!detEl) return;
+
+            const props = feature && feature.properties ? feature.properties : {};
+            const title = props.tooltip || `${analysisType.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())} Feature`;
+            const detailsHTML = props.details_html || props.popup_html || `<pre style="white-space:pre-wrap;word-break:break-word;">${JSON.stringify(props, null, 2)}</pre>`;
+
+            detEl.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.5rem;">
+                    <button id="resultsBackBtn" style="padding:.45rem .7rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">
+                        ← Back
+                    </button>
+                    <div style="font-weight:700;font-size:1rem;">${title}</div>
+                    <div></div>
+                </div>
+                <div id="resultsDetailsScroll" style="max-height:46vh;overflow:auto;margin-bottom:.6rem;">${detailsHTML}</div>
+                <div style="display:flex;justify-content:flex-start;">
+                    <button id="aiSuggestBtn" style="padding:.55rem .8rem;border:none;border-radius:8px;background:#0ea5e9;color:#fff;font-weight:700;">
+                        Generate AI Suggestions
+                    </button>
+                </div>
+                <div id="aiSuggestOut" style="margin-top:.6rem;"></div>
+            `;
+
+            const backBtn = document.getElementById('resultsBackBtn');
+            if (backBtn) backBtn.onclick = () => {
+                setResultsMode('list');
+                try { resetHighlight(layer); } catch(_){}
+            };
+
+            const aiBtn = document.getElementById('aiSuggestBtn');
+            const aiOut = document.getElementById('aiSuggestOut');
+            if (aiBtn) aiBtn.onclick = async () => {
+                aiBtn.disabled = true;
+                aiBtn.textContent = 'Generating…';
+                aiOut.innerHTML = '';
+                const prompt = (props.details_html || props.popup_html || JSON.stringify(props)).toString();
+                const type = analysisType.includes('green') ? 'green' : (analysisType.includes('aq') ? 'aq' : 'uhi');
+                try {
+                    const resp = await fetch('/llm-inference', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt, type, markdown: true })
+                    });
+                    if (!resp.ok) throw new Error('AI error');
+                    const data = await resp.json();
+                    const content = data.response || 'No content';
+                    aiOut.innerHTML = `<div style="padding:.6rem;border:1px solid #e7e9ee;border-radius:8px;background:#fff;">${content}</div>`;
+                } catch (e) {
+                    aiOut.innerHTML = `<div style="color:#b91c1c;">Error generating suggestions. Please try again.</div>`;
+                } finally {
+                    aiBtn.disabled = false;
+                    aiBtn.textContent = 'Generate AI Suggestions';
+                }
+            };
+        }
+
+        function renderPayload(analysisType, payload) {
+            const layers = payload && payload.layers ? payload.layers : {};
+            analysisLayers[analysisType] = analysisLayers[analysisType] || [];
+
+            const styleFromProps = (props) => props && props.style ? props.style : {};
+
+            const geojsonLayer = (fc) => L.geoJSON(fc, {
+                style: f => styleFromProps(f.properties || {}),
+                pointToLayer: (feature, latlng) => {
+                    const m = feature.properties && feature.properties.marker;
+                    if (m && m.type === 'circle') {
+                        return L.circleMarker(latlng, {
+                            radius: m.radius || 6,
+                            color: m.color || '#2563eb',
+                            fill: m.fill !== false,
+                            fillColor: m.fillColor || m.color || '#2563eb',
+                            fillOpacity: m.fillOpacity != null ? m.fillOpacity : 0.9,
+                        });
+                    }
+                    return L.marker(latlng);
+                },
+                onEachFeature: (feature, layer) => {
+                    const p = feature.properties || {};
+                    if (p.tooltip) layer.bindTooltip(p.tooltip);
+                    // Click to show rich details in the Results panel
+                    layer.on('click', () => showFeatureDetails(analysisType, feature, layer));
+                }
+            });
+
+            // Add each named layer in payload
+            Object.entries(layers).forEach(([name, fc]) => {
+                if (!fc) return;
+                const lyr = geojsonLayer(fc);
+                lyr.addTo(map);
+                analysisLayers[analysisType].push(lyr);
+            });
+
+            // Center/zoom if provided
+            if (payload.meta && payload.meta.center) {
+                const z = payload.meta.zoom || map.getZoom();
+                map.setView(payload.meta.center, z);
+            }
+
+            // Add toggle checkbox for this analysis
+            addToggleForAnalysis(analysisType);
+
+            // Update legend if provided
+            if (payload.legend) {
+                addOrUpdateAnalysisLegend(analysisType, payload.legend);
+            }
+        }
+
+        // --- Legend control (bottom-left), accumulates legends per analysis ---
+        const analysisLegends = {}; // { analysisType: legendObject }
+        let resultsLegendControl = null;
+        function ensureResultsLegend() {
+            if (document.getElementById('resultsLegendBox')) return;
+            const LegendCtl = L.Control.extend({
+                options: { position: 'bottomleft' },
+                onAdd: function () {
+                    const c = L.DomUtil.create('div', 'leaflet-control custom-panel');
+                    c.id = 'resultsLegendBox';
+                    c.style.width = '260px';
+                    c.innerHTML = `
+                        <div class="panel-header"><span>Legend</span></div>
+                        <div class="panel-body" id="legendBody"></div>
+                    `;
+                    L.DomEvent.disableClickPropagation(c);
+                    L.DomEvent.disableScrollPropagation(c);
+                    return c;
+                }
+            });
+            resultsLegendControl = new LegendCtl().addTo(map);
+        }
+        function renderLegend() {
+            ensureResultsLegend();
+            const body = document.getElementById('legendBody');
+            if (!body) return;
+            const entries = [];
+            Object.entries(analysisLegends).forEach(([atype, lg]) => {
+                const title = lg.title || atype.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                entries.push(`<div style="font-weight:600;margin:.2rem 0 .3rem;">${title}</div>`);
+                if (lg.colors) {
+                    Object.entries(lg.colors).forEach(([name, color]) => {
+                        const label = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        entries.push(`
+                            <div style="display:flex;align-items:center;gap:8px;margin:2px 0;">
+                                <span style="display:inline-block;width:14px;height:14px;background:${color};border:1px solid rgba(0,0,0,.25);"></span>
+                                <span style="font-size:.9rem;">${label}</span>
+                            </div>
+                        `);
+                    });
+                }
+            });
+            body.innerHTML = entries.join('') || '<em>No legend available</em>';
+        }
+        function addOrUpdateAnalysisLegend(analysisType, legendObj) {
+            analysisLegends[analysisType] = legendObj || {};
+            renderLegend();
+        }
+
+        // --- Run New Analysis control (separate box below results, top-right) ---
+        let runNewControl = null;
+        function ensureRunNewAnalysisControl() {
+            if (document.getElementById('runNewAnalysisBox')) return;
+            const Ctl = L.Control.extend({
+                options: { position: 'topright' },
+                onAdd: function () {
+                    const c = L.DomUtil.create('div', 'leaflet-control');
+                    c.id = 'runNewAnalysisBox';
+                    c.style.width = '280px';
+                    c.style.maxWidth = '80vw';
+                    c.style.marginTop = '8px'; // appear below Results panel
+                    c.innerHTML = `
+                        <button id="runNewAnalysisBtn"
+                                style="width:100%;padding:.6rem;border:none;border-radius:8px;cursor:pointer;font-weight:600;background:#10b981;color:#fff;">
+                            Run New Analysis
+                        </button>
+                    `;
+                    L.DomEvent.disableClickPropagation(c);
+                    L.DomEvent.disableScrollPropagation(c);
+                    return c;
+                }
+            });
+            runNewControl = new Ctl().addTo(map);
+            const btn = document.getElementById('runNewAnalysisBtn');
+            if (btn) btn.addEventListener('click', resetForNewAnalysis);
+        }
+        function removeRunNewControl() {
+            const el = document.getElementById('runNewAnalysisBox');
+            if (el && el.parentElement) el.parentElement.removeChild(el);
+            runNewControl = null;
+        }
+
+        function removeResultsPanel() {
+            const panel = document.getElementById('resultsToggleBox');
+            if (panel && panel.parentElement) {
+                // remove Leaflet control container
+                panel.parentElement.removeChild(panel);
+            }
+            // Also forget toggles map
+            for (const key in layerToggles) delete layerToggles[key];
+        }
+
+        function removeResultsLegend() {
+            const box = document.getElementById('resultsLegendBox');
+            if (box && box.parentElement) box.parentElement.removeChild(box);
+            // clear stored legends
+            for (const k in analysisLegends) delete analysisLegends[k];
+            resultsLegendControl = null;
+        }
+
+        function resetForNewAnalysis() {
+            // Clear layers and results panel
+            clearAnalysisLayers();
+            removeResultsPanel();
+            removeResultsLegend();
+            removeRunNewControl();
+
+            // Close any existing SSE connection
+            if (es) { try { es.close(); } catch(_){} es = null; }
+
+            // Restore UI controls
+            clearRunningIndicators();
+            checkboxes.forEach(id => {
+                const el = document.getElementById(id);
+                el.disabled = false;
+            });
+            if (!map.hasControl || typeof map.hasControl !== 'function' || !map.hasControl(drawControl)) {
+                map.addControl(drawControl);
+            }
+
+            // Reset run button and status
+            runBtn.disabled = !(layer && checkboxes.some(id => document.getElementById(id).checked));
+            runBtn.querySelector('.btn-text').style.display = 'inline';
+            runBtn.querySelector('.btn-loading').style.display = 'none';
+            statusMsg.style.display = 'none';
+            cancelBtn.style.display = 'none';
+
+            // Re-enable place search only on new analysis reset
+            if (typeof window.setSearchEnabled === 'function') {
+                try { window.setSearchEnabled(true); } catch(_) {}
+            }
+
+            updateButtonState();
+        }
+
+        async function startRun() {
+            if (!layer) return;
+            // Build request
+            const selectedAnalyses = checkboxes.filter(id => document.getElementById(id).checked);
+            const sessionId = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+            currentSessionId = sessionId;
+
+            const geojson = layer.toGeoJSON();
+
+            // Fire request to backend
+            const res = await fetch('/run-analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    district: null,
+                    upazila: null,
+                    analyses: selectedAnalyses,
+                    geojson: geojson,
+                })
+            });
+            if (!res.ok) {
+                alert('Failed to start analysis: ' + res.status);
+                return;
+            }
+            // Show status only after backend accepted the job
+            statusMsg.style.display = 'block';
+
+            // SSE stream
+            if (es) { try { es.close(); } catch(_){} }
+            es = new EventSource(`/sse/${sessionId}`);
+            es.onmessage = (evt) => {
+                try {
+                    const data = JSON.parse(evt.data);
+                    const t = data.type;
+                    if (t === 'analysis_complete') {
+                        if (data.analysis && data.data) {
+                            renderPayload(data.analysis, data.data);
+                        }
+                    } else if (t === 'all_analyses_complete') {
+                        // Close SSE stream and keep UI locked until user resets
+                        if (es) { try { es.close(); } catch(_){} es = null; }
+                        runBtn.querySelector('.btn-text').style.display = 'inline';
+                        runBtn.querySelector('.btn-loading').style.display = 'none';
+                        statusMsg.style.display = 'none';
+                        cancelBtn.style.display = 'none';
+                        // Do NOT re-enable checkboxes/draw controls here
+                        ensureRunNewAnalysisControl();
+                    } else if (t === 'error') {
+                        console.error('Server error:', data.message);
+                    }
+                } catch (e) {
+                    // heartbeat or parse issue
+                }
+            };
+        }
+
+        runBtn.addEventListener('click', async () => {
+            // disable UI
+            runBtn.disabled = true;
+            checkboxes.forEach(id => document.getElementById(id).disabled = true);
+            drawControl.remove();
+
+            // Disable place search for the duration of the run
+            if (typeof window.setSearchEnabled === 'function') {
+                try { window.setSearchEnabled(false); } catch(_) {}
+            }
+
+            // show running state
+            runBtn.querySelector('.btn-text').style.display = 'none';
+            runBtn.querySelector('.btn-loading').style.display = 'inline-block';
+            // moved: show after backend accepted
+            cancelBtn.style.display = 'block';
+
+            // NEW: transform analysis list UI
+            showRunningIndicators();
+
+            // Clear previous results
+            clearAnalysisLayers();
+            removeResultsPanel();
+            removeResultsLegend();
+            removeRunNewControl();
+            await startRun();
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            const sure = confirm('Cancel the running analysis?');
+            if (!sure) return;
+
+            // re-enable selections
+            checkboxes.forEach(id => {
+                const el = document.getElementById(id);
+                el.disabled = false;
+            });
+
+            // restore draw controls
+            map.addControl(drawControl);
+
+            // reset button state
+            runBtn.querySelector('.btn-text').style.display = 'inline';
+            runBtn.querySelector('.btn-loading').style.display = 'none';
+            statusMsg.style.display = 'none';
+            cancelBtn.style.display = 'none';
+
+            // NEW: revert analysis list UI
+            clearRunningIndicators();
+
+            // Close SSE stream (best-effort)
+            if (es) { try { es.close(); } catch(_){} es = null; }
+
+            // recalc whether run can be clicked again
+            updateButtonState();
+        });
+
+        // Arrange controls top-left and push them below navbar height
+        (function arrangeTopLeft() {
+            const corner = map._controlCorners['topleft'];
+            corner.style.display = 'flex';
+            corner.style.alignItems = 'flex-start';
+            corner.style.gap = '8px';
+
+            const stack = L.DomUtil.create('div', 'leaflet-left-stack', corner);
+
+            Array.from(corner.children)
+                .filter(el => el !== stack && !el.classList.contains('custom-panel'))
+                .forEach(el => stack.appendChild(el));
+        })();
+
+        // Prevent controls from overlapping the navbar on any device
+        function pushControlsBelowNavbar() {
+            const nav = document.getElementById('navbar');
+            const topContainers = document.querySelectorAll('.leaflet-top');
+            const offset = (nav ? nav.offsetHeight : 64) + 12; // 12px breathing room
+            topContainers.forEach(el => { el.style.top = offset + 'px'; });
+        }
+        window.addEventListener('load', pushControlsBelowNavbar);
+        window.addEventListener('resize', pushControlsBelowNavbar);
+
+        // Initialize place search now that LeftPanel and Draw controls exist
+        if (typeof setupPlaceSearch === 'function') {
+            try { setupPlaceSearch(); } catch (e) { console.warn('Place search init failed:', e); }
+        }
+    </script>
+
+    <!-- Mouse position (lat, lon) top-right -->
+    <script>
+        (function ensureCoordsBox(){
+            if (document.getElementById('coordsBox')) return;
+            const CoordsCtl = L.Control.extend({
+                options: { position: 'topright' },
+                onAdd: function () {
+                    const c = L.DomUtil.create('div', 'leaflet-control');
+                    c.id = 'coordsBox';
+                    c.style.background = 'white';
+                    c.style.padding = '6px 10px';
+                    c.style.borderRadius = '8px';
+                    c.style.boxShadow = '0 6px 24px rgba(0,0,0,.15)';
+                    c.style.fontFamily = 'Inter, sans-serif';
+                    c.style.fontSize = '.9rem';
+                    c.style.marginTop = '8px';
+                    c.style.color = '#0f172a';
+                    c.innerHTML = 'Lat: --, Lon: --';
+                    L.DomEvent.disableClickPropagation(c);
+                    L.DomEvent.disableScrollPropagation(c);
+                    return c;
+                }
+            });
+            new CoordsCtl().addTo(map);
+        })();
+        map.on('mousemove', function(e){
+            const el = document.getElementById('coordsBox');
+            if (!el) return;
+            const lat = e.latlng.lat.toFixed(5);
+            const lng = e.latlng.lng.toFixed(5);
+            el.textContent = `Lat: ${lat}, Lon: ${lng}`;
+        });
+    </script>
+
+    <!-- Navigation Script -->
+    <script>
+        const navbar = document.getElementById('navbar');
+        const navToggle = document.getElementById('navToggle');
+        const navMenu = document.getElementById('navMenu');
+        const navLinks = document.querySelectorAll('.nav-link');
+
+        function handleNavbarScroll() {
+            const scrollY = window.scrollY;
+            if (scrollY > 50) navbar.classList.add('scrolled');
+            else navbar.classList.remove('scrolled');
+        }
+
+        function toggleMobileMenu() {
+            navToggle.classList.toggle('active');
+            navMenu.classList.toggle('active');
+            // Hide map controls/panel while menu is open so dropdown isn't behind them.
+            document.body.classList.toggle('menu-open', navMenu.classList.contains('active'));
+        }
+
+        function closeMobileMenu() {
+            navToggle.classList.remove('active');
+            navMenu.classList.remove('active');
+            document.body.classList.remove('menu-open');
+        }
+
+        window.addEventListener('scroll', handleNavbarScroll);
+        if (navToggle) navToggle.addEventListener('click', toggleMobileMenu);
+        document.addEventListener('click', function(event) {
+            if (!navbar.contains(event.target)) closeMobileMenu();
+        });
+        navLinks.forEach(link => {
+            link.addEventListener('click', closeMobileMenu);
+        });
+    </script>
+</body>
+</html>

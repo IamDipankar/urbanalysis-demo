@@ -5,7 +5,7 @@ import os
 import importlib.util
 import time
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional, Any
 from models.anlyzers import router
 import requests
 import dotenv
@@ -22,10 +22,11 @@ async def read_root():
 
 # Pydantic models
 class AnalysisRequest(BaseModel):
-    upazila: str | None = None
-    district: str
+    upazila: Optional[str] = None
+    district: Optional[str] = None
     analyses: List[str]
     session_id: str
+    geojson: Optional[dict] = None
 
 class LLM_Inference_Request(BaseModel):
     prompt: str
@@ -47,15 +48,20 @@ analysis_type_modules = {
 
 analysis_status: Dict[str, Dict] = {}
 
-def send_websocket_message(session_id: str, message: dict):
-    response = requests.post(f"{os.getenv('MAIN_SERVER_URL')}/xxd-send-websocket-message-to-the-client", params={
-        "session_id": session_id,
-        "message": json.dumps(message)
-    })
+def push_event(session_id: str, message: dict):
+    # Send JSON in body to avoid URL-length issues
+    response = requests.post(
+        f"{os.getenv('MAIN_SERVER_URL')}/xxd-push-event",
+        json={
+            "session_id": session_id,
+            "message": message,
+        },
+        timeout=120,
+    )
     if response.status_code != 200:
-        print(f"Error sending websocket message: {response.text}")
+        print(f"Error pushing event: {response.text}. Status: {response.status_code}")
 
-def update_main_analysis_status(session_id: str, status: Dict):
+def update_main_analysis_status(session_id: str, status: Dict[str, Any]):
     response = requests.post(f"{os.getenv('MAIN_SERVER_URL')}/xxd-update-analysis-status", params={
         "session_id": session_id,
         "status": json.dumps(status)
@@ -88,12 +94,12 @@ def send_files(session_id: str):
         print(f"No files found to send for session {session_id}")
 
 
-def run_single_analysis(analysis_type: str, session_id: str, ee_geometry, aoi_bbox, gdf):
+def run_single_analysis(analysis_type: str, session_id: str, ee_geometry, aoi_bbox, gdf, geojson: Optional[dict] = None):
     """Run a single analysis in a separate thread"""
     global analysis_type_modules
     try:
         # Send starting message
-        send_websocket_message(session_id, {
+        push_event(session_id, {
             "type": "analysis_start",
             "analysis": analysis_type,
             "message": f"Started {analysis_type.replace('_', ' ').title()} analysis..."
@@ -104,42 +110,57 @@ def run_single_analysis(analysis_type: str, session_id: str, ee_geometry, aoi_bb
         spec = importlib.util.spec_from_file_location(analysis_type, module_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        # Run and capture payload if module returns it
+        payload: Optional[Any] = None
         if analysis_type == "green_access":
-            module.run(session_id, gdf)
-        # Run the main function
+            payload = module.run(session_id, gdf, geoJson=geojson)
         else:
-            module.run(session_id, ee_geometry, aoi_bbox)
+            payload = module.run(session_id, ee_geometry, aoi_bbox, geoJson=geojson)
+
+        # If payload is a JSON string, parse to dict
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                # fallback: leave as string
+                pass
         
         # Send completion message
-        send_websocket_message(session_id, {
+        event = {
             "type": "analysis_complete",
             "analysis": analysis_type,
-            "message": f"{analysis_type.replace('_', ' ').title()} analysis completed!"
-        })
+            "message": f"{analysis_type.replace('_', ' ').title()} analysis completed!",
+        }
+        if payload is not None:
+            event["data"] = payload
+        push_event(session_id, event)
         
         return True
         
     except Exception as e:
         # Send error message
-        send_websocket_message(session_id, {
+        push_event(session_id, {
             "type": "analysis_error",
             "analysis": analysis_type,
             "message": f"Error in {analysis_type}: {str(e)}"
         })
         return False
 
-def run_analyses_background(analyses: List[str], session_id: str, district: str, upazila: str = None):
+def run_analyses_background(analyses: List[str], session_id: str, district: Optional[str], upazila: Optional[str] = None, geojson: Optional[dict] = None):
     """Run multiple analyses in sequence"""
     # Extracting location
-    ee_geometry, aoi_bbox = router.get_polygon_and_bbox(district, upazila)
-    gdf = router.get_gdf(district, upazila)
+    ee_geometry, aoi_bbox = (None, None)
+    gdf = None
+    if geojson is None:
+        ee_geometry, aoi_bbox = router.get_polygon_and_bbox(district, upazila)
+        gdf = router.get_gdf(district, upazila)
     try:
         completed_analyses = []
         total_analyses = len(analyses)
         
         for i, analysis in enumerate(analyses):
             # Update progress
-            send_websocket_message(session_id, {
+            push_event(session_id, {
                 "type": "progress_update",
                 "current": i + 1,
                 "total": total_analyses,
@@ -148,7 +169,7 @@ def run_analyses_background(analyses: List[str], session_id: str, district: str,
 
             
             
-            success = run_single_analysis(analysis, session_id, ee_geometry, aoi_bbox, gdf)
+            success = run_single_analysis(analysis, session_id, ee_geometry, aoi_bbox, gdf, geojson)
             if success:
                 completed_analyses.append(analysis)
             
@@ -167,10 +188,11 @@ def run_analyses_background(analyses: List[str], session_id: str, district: str,
 
         update_main_analysis_status(session_id, analysis_status[session_id])
 
-        send_files(session_id)
+        # Optionally send files for legacy HTML viewers
+        # send_files(session_id)
 
         # Send final completion message
-        send_websocket_message(session_id, {
+        push_event(session_id, {
             "type": "all_analyses_complete",
             "completed_analyses": completed_analyses,
             "message": f"All analyses completed! {len(completed_analyses)}/{total_analyses} successful."
@@ -184,10 +206,9 @@ def run_analyses_background(analyses: List[str], session_id: str, district: str,
         }
 
         update_main_analysis_status(session_id, analysis_status[session_id])
+        # send_files(session_id)
 
-        send_files(session_id)
-
-        send_websocket_message(session_id, {
+        push_event(session_id, {
             "type": "error",
             "message": f"Error running analyses: {str(e)}"
         })
@@ -207,7 +228,7 @@ async def run_analysis(request: AnalysisRequest, background_tasks: BackgroundTas
     }
     
     # Start analyses in background
-    background_tasks.add_task(run_analyses_background, request.analyses, request.session_id, request.district, request.upazila)
+    background_tasks.add_task(run_analyses_background, request.analyses, request.session_id, request.district, request.upazila, request.geojson)
     
     return {
         "message": "Started",

@@ -1,5 +1,5 @@
-from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks,status, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, status, UploadFile, File, Form, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import asyncio
@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional, Any
 from models.anlyzers import router_lite
 from models.llms import groq_api
 import markdown
@@ -45,16 +45,20 @@ app.mount("/web_outputs", StaticFiles(directory="web_outputs"), name="web_output
 
 # Store active connections and analysis status
 active_connections: Dict[str, WebSocket] = {}
-analysis_status: Dict[str, Dict] = {}
+analysis_status: Dict[str, Dict[str, Any]] = {}
 
 completion_status: Dict[str, List[str]] = {}
 
+# SSE subscribers per session_id -> set of asyncio.Queue
+sse_subscribers: Dict[str, List[asyncio.Queue]] = {}
+
 # Pydantic models
 class AnalysisRequest(BaseModel):
-    upazila: str | None = None
-    district: str
+    upazila: Optional[str] = None
+    district: Optional[str] = None
     analyses: List[str]
     session_id: str
+    geojson: Optional[dict] = None
 
 class LLM_Inference_Request(BaseModel):
     prompt: str
@@ -102,10 +106,10 @@ async def request_to_remote(request: AnalysisRequest, tried = 0):
         print(str(e))
         if tried >= 4:
             print("Exception. Sending error...")
-            analysis_status[request.session_id]["status"] = "error" + e
+            analysis_status[request.session_id]["status"] = "error" + str(e)
             asyncio.run(manager.send_message(request.session_id, {
                 "type": "error",
-                "message": "Error connecting to remote server. Please try again later." + e
+                "message": "Error connecting to remote server. Please try again later." + str(e)
             }))
             return
         else:
@@ -140,6 +144,75 @@ async def request_to_remote(request: AnalysisRequest, tried = 0):
 @app.get("/")
 async def read_root():
     return FileResponse("statics/index.html")
+
+# -----------------------------
+# Server-Sent Events (SSE)
+# -----------------------------
+
+async def _ensure_session(session_id: str):
+    if session_id not in analysis_status:
+        analysis_status[session_id] = {
+            "status": "idle",
+            "requested_analyses": [],
+            "completed_analyses": [],
+            "data": {},
+            "timestamp": datetime.now().isoformat(),
+        }
+    if session_id not in sse_subscribers:
+        sse_subscribers[session_id] = []
+
+async def _broadcast_event(session_id: str, event: Dict[str, Any]):
+    # Fan out to all SSE queues for this session
+    queues = sse_subscribers.get(session_id, [])
+    # Attach server timestamp
+    event = {**event, "server_ts": datetime.now().isoformat()}
+    for q in list(queues):
+        try:
+            await q.put(event)
+        except Exception:
+            # best-effort
+            pass
+
+def _format_sse(event: Dict[str, Any]) -> str:
+    return f"data: {json.dumps(event)}\n\n"
+
+@app.get("/sse/{session_id}")
+async def sse(session_id: str, request: Request):
+    await _ensure_session(session_id)
+    queue: asyncio.Queue = asyncio.Queue()
+    sse_subscribers[session_id].append(queue)
+
+    async def event_generator():
+        # Initial hello
+        yield _format_sse({"type": "connected", "message": "SSE connected"})
+        try:
+            # Heartbeat ticker
+            last_heartbeat = datetime.now().timestamp()
+            while True:
+                # client disconnect?
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield _format_sse(event)
+                except asyncio.TimeoutError:
+                    # heartbeat to keep connection alive
+                    now = datetime.now().timestamp()
+                    if now - last_heartbeat >= 15:
+                        last_heartbeat = now
+                        yield _format_sse({"type": "heartbeat"})
+        finally:
+            # cleanup
+            if session_id in sse_subscribers and queue in sse_subscribers[session_id]:
+                sse_subscribers[session_id].remove(queue)
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Content-Type": "text/event-stream",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_generator(), headers=headers)
 
 async def continue_websocket(websocket: WebSocket, session_id: str):
     await manager.connect(websocket, session_id)
@@ -195,7 +268,9 @@ async def run_analysis(request: AnalysisRequest, background_tasks: BackgroundTas
     analysis_status[request.session_id] = {
         "status": "running",
         "requested_analyses": request.analyses,
-        "timestamp": datetime.now().isoformat()
+        "completed_analyses": [],
+        "data": {},
+        "timestamp": datetime.now().isoformat(),
     }
 
     await asyncio.sleep(1)
@@ -272,6 +347,15 @@ async def get_available_results(session_id: str):
                 })
     
     return {"available_results": available_results, "status": "completed"}
+
+@app.get("/results-data/{session_id}/{analysis_type}")
+async def get_results_data(session_id: str, analysis_type: str):
+    if session_id not in analysis_status:
+        raise HTTPException(status_code=404, detail="Analysis session not found")
+    data = analysis_status[session_id].get("data", {}).get(analysis_type)
+    if data is None:
+        raise HTTPException(status_code=404, detail="No data found for requested analysis")
+    return data
 
 @app.get("/health")
 async def read_health():
@@ -350,11 +434,76 @@ async def analysis_response_from_remote(files: List[UploadFile] = File(None), se
         with open(file_location, 'wb') as out_file:
             content = await file.read()  # async read
             out_file.write(content)
+    return {"message": "Files saved"}
 
 
+@app.post("/xxd-push-event")
+async def push_event(request: Request, session_id: Optional[str] = None, message: Optional[str] = None):
+    """Remote server pushes an event that will be broadcast via SSE and used to update state.
+    Accepts either JSON body {session_id, message} or query params.
+    """
+    # Read from body if not provided as query params
+    if session_id is None or message is None:
+        try:
+            body = await request.json()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}")
+        session_id = body.get("session_id")
+        event = body.get("message")
+    else:
+        # message passed as JSON string in query param
+        try:
+            event = json.loads(message)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    # If event is still a string, try to parse it; otherwise expect dict
+    if isinstance(event, str):
+        try:
+            event = json.loads(event)
+        except Exception:
+            # keep as string, but wrap
+            event = {"type": "message", "message": event}
+
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="message must be a JSON object or JSON string")
+
+    await _ensure_session(session_id)
+
+    # Update in-memory status on certain events
+    etype = event.get("type")
+    analysis = event.get("analysis")
+
+    if etype == "progress_update":
+        analysis_status[session_id]["status"] = "running"
+    elif etype == "analysis_start" and analysis:
+        analysis_status[session_id]["status"] = "running"
+    elif etype == "analysis_complete" and analysis:
+        analysis_status[session_id].setdefault("completed_analyses", [])
+        if analysis not in analysis_status[session_id]["completed_analyses"]:
+            analysis_status[session_id]["completed_analyses"].append(analysis)
+        if "data" in event:
+            analysis_status[session_id].setdefault("data", {})[analysis] = event["data"]
+        req = set(analysis_status[session_id].get("requested_analyses", []))
+        done = set(analysis_status[session_id].get("completed_analyses", []))
+        if req and req.issubset(done):
+            analysis_status[session_id]["status"] = "completed"
+    elif etype == "all_analyses_complete":
+        analysis_status[session_id]["status"] = "completed"
+    elif etype == "error":
+        analysis_status[session_id]["status"] = "error"
+
+    # Broadcast to connected SSE clients
+    await _broadcast_event(session_id, event)
+    return {"message": "ok"}
+
+# Backward-compat: keep old endpoint name but route to SSE
 @app.post("/xxd-send-websocket-message-to-the-client")
 async def send_websocket_message_to_client(message: str, session_id: str):
-    await manager.send_message(session_id, json.loads(message))
+    return await push_event(session_id=session_id, message=message)
 
 
 @app.post("/xxd-update-analysis-status")

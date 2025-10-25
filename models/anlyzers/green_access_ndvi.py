@@ -1,4 +1,5 @@
 import os, tempfile, base64
+import json
 import math
 import warnings
 from datetime import date
@@ -560,9 +561,28 @@ def edges_within_time(Gp, edges_gdf, source_node, cutoff_s):
 # session_id = "aaa"
 # gdf = location_gdf
 # @profile
-def run(session_id = None, gdf = None):
-    print("Started green access NDVI analysis. Session ID =", session_id)
+def run(session_id = None, gdf = None, geoJson = None):
+    print("Initializing Earth Engine…")
     ee_init_headless()
+
+    if geoJson is not None:
+        # Robustly convert GeoJSON (Feature or FeatureCollection) to a GeoDataFrame
+        try:
+            gj_type = geoJson.get("type")
+            if gj_type == "FeatureCollection" and isinstance(geoJson.get("features"), list):
+                gdf = gpd.GeoDataFrame.from_features(geoJson, crs="EPSG:4326")
+            elif gj_type == "Feature" and geoJson.get("geometry"):
+                gdf = gpd.GeoDataFrame.from_features([geoJson], crs="EPSG:4326")
+            else:
+                # Try to extract first feature fallback
+                feat = geoJson.get("features", [None])[0]
+                if feat and feat.get("geometry"):
+                    gdf = gpd.GeoDataFrame.from_features([feat], crs="EPSG:4326")
+        except Exception as e:
+            print("Failed to parse GeoJSON to GeoDataFrame:", e)
+            raise SystemExit("Invalid GeoJSON provided for green access analysis.")
+    print("Started green access NDVI analysis. Session ID =", session_id)
+    
 
     # Soil sources & images
     soil_imgs = soil_sources_images() if DO_SOIL else []
@@ -571,18 +591,41 @@ def run(session_id = None, gdf = None):
     # OSMnx
     ox.settings.log_console = True
     ox.settings.use_cache = True
-    ox.settings.timeout = 180
+    # Keep OSM/Overpass from hanging too long
+    # Keep OSM/Overpass from hanging too long (v2 prefers requests_timeout)
+    try:
+        ox.settings.requests_timeout = 60  # OSMnx >= 2.0
+    except Exception:
+        pass
+    ox.settings.timeout = 60  # backward compatibility for < 2.0
 
     print("Geocoding AOI…")
-    aoi = gdf 
-    if aoi.empty:
+    aoi = gdf
+    if aoi is None or aoi.empty:
         raise SystemExit("Could not geocode the AOI name.")
     aoi_polygon = aoi.geometry.iloc[0]
     aoi_bounds = aoi.to_crs(epsg=4326).total_bounds
     gee_aoi = ee.Geometry.Rectangle(list(aoi_bounds))
 
     print("Downloading pedestrian network…")
-    G = ox.graph_from_polygon(aoi_polygon, network_type="walk", simplify=True)
+    # Try polygon-based network; fall back to point-radius if slow or fails
+    try:
+        G = ox.graph_from_polygon(aoi_polygon, network_type="walk", simplify=True)
+    except Exception as e:
+        print("Primary graph_from_polygon failed, falling back to graph_from_point:", e)
+        centroid_ll = aoi.to_crs(epsg=4326).geometry.iloc[0].centroid
+        G = ox.graph_from_point((centroid_ll.y, centroid_ll.x), dist=3000, network_type="walk", simplify=True)
+
+    # If the graph is excessively large, trim to a reasonable bbox around centroid
+    try:
+        node_count = len(G.nodes)
+        edge_count = len(G.edges)
+        if node_count > 80000 or edge_count > 120000:
+            print(f"Graph too large (nodes={node_count}, edges={edge_count}); trimming to 3km radius…")
+            centroid_ll = aoi.to_crs(epsg=4326).geometry.iloc[0].centroid
+            G = ox.graph_from_point((centroid_ll.y, centroid_ll.x), dist=3000, network_type="walk", simplify=True)
+    except Exception:
+        pass
 
     print("Projecting graph to local metric CRS…")
     Gp = ox.project_graph(G)
@@ -607,9 +650,18 @@ def run(session_id = None, gdf = None):
         osm_greens = gpd.GeoDataFrame(gpd.pd.concat(green_layers, ignore_index=True), crs=base_crs)
         osm_greens = osm_greens[osm_greens.geometry.type.isin(["Polygon", "MultiPolygon"])].copy()
 
-    # NDVI greens
+    # NDVI greens with fallback thresholds
     print("Vectorizing NDVI green polygons (GEE)…")
     ndvi_greens = gee_green_polygons(gee_aoi, ndvi_min=NDVI_GREEN_MIN, scale=30, max_features=700)
+    if ndvi_greens is None or ndvi_greens.empty:
+        for thr in (0.30, 0.25, 0.20):
+            try:
+                print(f"NDVI fallback: trying threshold {thr}…")
+                ndvi_greens = gee_green_polygons(gee_aoi, ndvi_min=thr, scale=30, max_features=700)
+                if ndvi_greens is not None and not ndvi_greens.empty:
+                    break
+            except Exception:
+                pass
 
     greens_list = []
     if osm_greens is not None and not osm_greens.empty:
@@ -617,25 +669,27 @@ def run(session_id = None, gdf = None):
     if ndvi_greens is not None and not ndvi_greens.empty:
         greens_list.append(ndvi_greens.to_crs(epsg=4326))
     if not greens_list:
-        raise SystemExit("No green polygons found from OSM or NDVI.")
-
-    greens_all = gpd.GeoDataFrame(gpd.pd.concat(greens_list, ignore_index=True), crs="EPSG:4326")
+        print("No green polygons found from OSM or NDVI. Proceeding with fallback: no destinations; all roads considered uncovered.")
+        greens_all = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    else:
+        greens_all = gpd.GeoDataFrame(gpd.pd.concat(greens_list, ignore_index=True), crs="EPSG:4326")
     print(f"Green polygons: OSM={0 if osm_greens is None else len(osm_greens)} | NDVI={len(ndvi_greens)} | merged={len(greens_all)}")
 
     # Project greens
-    greens_poly_proj = greens_all.to_crs(graph_crs)
+    greens_poly_proj = greens_all.to_crs(graph_crs) if greens_all is not None else gpd.GeoDataFrame(geometry=[], crs=graph_crs)
 
     # Destination nodes from green centroids
     print("Computing destination nodes from green centroids…")
-    greens_poly_proj["centroid"] = greens_poly_proj.geometry.centroid
     dest_nodes = set()
-    for c in greens_poly_proj["centroid"]:
-        try:
-            dest_nodes.add(ox.distance.nearest_nodes(Gp, X=c.x, Y=c.y))
-        except Exception:
-            pass
+    if greens_poly_proj is not None and not greens_poly_proj.empty:
+        greens_poly_proj["centroid"] = greens_poly_proj.geometry.centroid
+        for c in greens_poly_proj["centroid"]:
+            try:
+                dest_nodes.add(ox.distance.nearest_nodes(Gp, X=c.x, Y=c.y))
+            except Exception:
+                pass
     if not dest_nodes:
-        raise SystemExit("No destination nodes from green centroids.")
+        print("No destination nodes available — skipping Dijkstra; marking all edges as uncovered.")
 
     # Edge costs
     print("Assigning time costs to edges…")
@@ -644,9 +698,11 @@ def run(session_id = None, gdf = None):
         data["time_s"] = length_m / WALK_MPS
 
     # Multi-source Dijkstra (reverse trick)
-    print("Running multi-source shortest path (Dijkstra)…")
-    Gr = Gp.reverse()
-    min_time_s = nx.multi_source_dijkstra_path_length(Gr, sources=list(dest_nodes), weight="time_s")
+    min_time_s = {}
+    if dest_nodes:
+        print("Running multi-source shortest path (Dijkstra)…")
+        Gr = Gp.reverse()
+        min_time_s = nx.multi_source_dijkstra_path_length(Gr, sources=list(dest_nodes), weight="time_s")
 
     def covered_by_threshold(u, v, threshold_s):
         tu = min_time_s.get(u, math.inf); tv = min_time_s.get(v, math.inf)
@@ -656,18 +712,25 @@ def run(session_id = None, gdf = None):
         return (min_time_s.get(u, math.inf) > T10) and (min_time_s.get(v, math.inf) > T10)
 
     print("Classifying edges by coverage…")
-    edges_gdf["covered_5min"] = edges_gdf.apply(lambda r: covered_by_threshold(r["u"], r["v"], T5), axis=1)
-    edges_gdf["covered_10min"] = edges_gdf.apply(lambda r: covered_by_threshold(r["u"], r["v"], T10), axis=1)
-    edges_gdf["uncovered_10min"] = edges_gdf.apply(lambda r: both_beyond_10(r["u"], r["v"]), axis=1)
-    uncovered = edges_gdf[edges_gdf["uncovered_10min"]].copy()
+    if dest_nodes:
+        edges_gdf["covered_5min"] = edges_gdf.apply(lambda r: covered_by_threshold(r["u"], r["v"], T5), axis=1)
+        edges_gdf["covered_10min"] = edges_gdf.apply(lambda r: covered_by_threshold(r["u"], r["v"], T10), axis=1)
+        edges_gdf["uncovered_10min"] = edges_gdf.apply(lambda r: both_beyond_10(r["u"], r["v"]), axis=1)
+        uncovered = edges_gdf[edges_gdf["uncovered_10min"]].copy()
+    else:
+        edges_gdf = edges_gdf.copy()
+        edges_gdf["covered_5min"] = False
+        edges_gdf["covered_10min"] = False
+        edges_gdf["uncovered_10min"] = True
+        uncovered = edges_gdf.copy()
     print(f"Uncovered road segments >10 min: {len(uncovered)}")
 
     # Isochrones (for display)
     print("Building isochrone polygons…")
-    iso5_edges = edges_gdf[edges_gdf["covered_5min"]]
-    iso10_edges = edges_gdf[edges_gdf["covered_10min"]]
-    iso5_poly = make_iso_polygon(iso5_edges, buffer_m=EDGE_BUFFER_M)
-    iso10_poly = make_iso_polygon(iso10_edges, buffer_m=EDGE_BUFFER_M)
+    iso5_edges = edges_gdf[edges_gdf["covered_5min"]] if "covered_5min" in edges_gdf.columns else edges_gdf.iloc[0:0]
+    iso10_edges = edges_gdf[edges_gdf["covered_10min"]] if "covered_10min" in edges_gdf.columns else edges_gdf.iloc[0:0]
+    iso5_poly = make_iso_polygon(iso5_edges, buffer_m=EDGE_BUFFER_M) if dest_nodes else None
+    iso10_poly = make_iso_polygon(iso10_edges, buffer_m=EDGE_BUFFER_M) if dest_nodes else None
 
     # Candidates: midpoints of longest uncovered segments (dedup)
     print("Selecting candidate micro-park points…")
@@ -856,6 +919,8 @@ def run(session_id = None, gdf = None):
     description += ("\n================= Candidate Site Context =================\n")
     summary_rows = []
 
+    details_html_by_cid = {}
+    details_data_by_cid = {}
     for idx, (cid, latlon_geom, proj_geom) in enumerate(zip(ids, cand_latlon_final.geometry, cand_proj.geometry), start=1):
         lat, lon = latlon_geom.y, latlon_geom.x
 
@@ -966,10 +1031,13 @@ def run(session_id = None, gdf = None):
                 Generate AI Suggestions
             </button></center>
 
-            <div id = "ai-answer_<<cid>>"><<great_blank>></div>
+            <div id = "ai-answer_<<cid>>"><</great_blank>>></div>
             
             """.replace("<<great_blank>>", "<br>"*10)
-        
+
+        # store details for frontend SSE payload (exclude button html here)
+        details_html_by_cid[cid] = description_html
+
         html_code = description_html + button_html
         html_code = html_code.replace("<<cid>>", str(cid))
 
@@ -1000,6 +1068,7 @@ def run(session_id = None, gdf = None):
         for k in POI_CATEGORIES.keys():
             row[f"cnt_{k}__{radius_used}m"] = counts.get(k, 0)
         summary_rows.append(row)
+        details_data_by_cid[cid] = row
 
     # Legend & controls
     legend_html = f"""
@@ -1077,4 +1146,134 @@ def run(session_id = None, gdf = None):
     except Exception as e:
         print("Could not write CSV:", e)
 
-    print("\nDone.")
+    # -------------------- Build and return client JSON payload --------------------
+    try:
+        # Helpers to build styled GeoJSON FeatureCollections
+        def geom_to_feature(geom, *, props=None, style=None):
+            props = props or {}
+            if style:
+                props = {**props, "style": style}
+            return {
+                "type": "Feature",
+                "properties": props,
+                "geometry": getattr(geom, "__geo_interface__", None) or json.loads(geom.to_json()),
+            }
+
+        def gdf_to_fc(gdf, *, style=None, limit=None, simplify_tolerance=None):
+            feats = []
+            if gdf is None:
+                return {"type": "FeatureCollection", "features": feats}
+            try:
+                geoms = gdf.geometry
+                if simplify_tolerance is not None:
+                    try:
+                        geoms = geoms.simplify(simplify_tolerance, preserve_topology=True)
+                    except Exception:
+                        pass
+                count = 0
+                for geom in geoms:
+                    if geom is None:
+                        continue
+                    feats.append(geom_to_feature(geom, style=style))
+                    count += 1
+                    if limit is not None and count >= limit:
+                        break
+            except Exception:
+                # Fallback empty
+                feats = []
+            return {"type": "FeatureCollection", "features": feats}
+
+        def single_geom_fc(geom, *, style=None):
+            if geom is None:
+                return None
+            try:
+                return {"type": "FeatureCollection", "features": [geom_to_feature(geom, style=style)]}
+            except Exception:
+                try:
+                    # maybe already an FC
+                    return geom.__geo_interface__
+                except Exception:
+                    return None
+
+        greens_fc = gdf_to_fc(
+            greens_latlon,
+            style={"color": "#2e7d32", "weight": 1, "fillColor": "#66bb6a", "fillOpacity": 0.35},
+        )
+
+        # Uncovered roads can be large; simplify and cap features
+        roads_fc = gdf_to_fc(
+            uncovered_latlon,
+            style={"color": "#e53935", "weight": 2, "opacity": 0.9},
+            simplify_tolerance=0.0002,
+            limit=2000,
+        )
+
+        iso10_fc = single_geom_fc(
+            iso10_latlon,
+            style={"color": "#ff9800", "weight": 1, "fillColor": "#ffcc80", "fillOpacity": 0.25},
+        )
+        iso5_fc = single_geom_fc(
+            iso5_latlon,
+            style={"color": "#1976d2", "weight": 1, "fillColor": "#90caf9", "fillOpacity": 0.25},
+        )
+
+        # Candidate points
+        cand_features = []
+        for idx, pt in enumerate(cand_latlon_final.geometry, start=1):
+            row = details_data_by_cid.get(idx, {})
+            details_html = details_html_by_cid.get(idx)
+            cand_features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "cid": idx,
+                        "marker": {
+                            "type": "circle",
+                            "radius": 6,
+                            "color": "#2563eb",
+                            "fill": True,
+                            "fillColor": "#2563eb",
+                            "fillOpacity": 0.95,
+                        },
+                        "tooltip": f"Candidate site #{idx}",
+                        "details_html": details_html,
+                        "details": row,
+                    },
+                    "geometry": {"type": "Point", "coordinates": [pt.x, pt.y]},
+                }
+            )
+        candidates_fc = {"type": "FeatureCollection", "features": cand_features}
+
+        payload = {
+            "meta": {"center": center, "zoom": 12, "tiles": "cartodbpositron"},
+            "layers": {
+                "greens": greens_fc,
+                "iso10": iso10_fc,
+                "iso5": iso5_fc,
+                "uncovered_roads": roads_fc,
+                "candidates": candidates_fc,
+            },
+            "legend": {
+                "title": "Green Access",
+                "colors": {
+                    "greens": "#2e7d32",
+                    "iso10": "#ff9800",
+                    "iso5": "#1976d2",
+                    "uncovered": "#e53935",
+                    "candidate": "#2563eb",
+                },
+            },
+        }
+
+        try:
+            json_output_dir = os.path.join("web_outputs", session_id, "green_access.json")
+            with open(json_output_dir, 'w', encoding='utf-8') as jf:
+                json.dump(payload, jf, ensure_ascii=False)
+        except Exception:
+            pass
+
+        print("\nDone.")
+        return payload
+    except Exception:
+        print("\nDone.")
+        return None
