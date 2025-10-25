@@ -474,8 +474,8 @@
             draw: {
                 polygon: true,
                 polyline: false,
-                circle: true,
-                rectangle: true,
+                circle: false,
+                rectangle: false,
                 marker: false,
                 circlemarker: false
             }
@@ -542,6 +542,38 @@
         const layerToggles = {}; // checkbox elements for toggling
         let currentSessionId = null;
         let es = null; // EventSource
+        // Cache for AI suggestions per feature (persist across back/forward within session)
+        const aiSuggestionCache = {}; // key -> HTML string
+
+        // Helper to uniquely identify a feature for caching
+        function featureCacheKey(analysisType, props, feature) {
+            if (props && (props.cid != null)) return `${analysisType}::cid::${props.cid}`;
+            if (props && (props.id != null)) return `${analysisType}::id::${props.id}`;
+            try {
+                const g = feature && feature.geometry;
+                if (g && g.type === 'Point' && Array.isArray(g.coordinates)) {
+                    const [x,y] = g.coordinates;
+                    return `${analysisType}::pt::${x.toFixed(6)},${y.toFixed(6)}`;
+                }
+            } catch(_) {}
+            return `${analysisType}::feature`;
+        }
+
+        // Remove any embedded AI buttons/containers from server-provided HTML
+        function sanitizeDetailsHTML(html) {
+            try {
+                const tmp = document.createElement('div');
+                tmp.innerHTML = html || '';
+                // Remove button(s) and ai output containers that may be embedded in popup_html
+                tmp.querySelectorAll('[id^="popup-btn_"]').forEach(n => n.remove());
+                tmp.querySelectorAll('[id^="ai-answer_"]').forEach(n => n.remove());
+                // Also strip inline onclicks if any
+                tmp.querySelectorAll('[onclick]').forEach(n => n.removeAttribute('onclick'));
+                return tmp.innerHTML;
+            } catch(_) {
+                return html || '';
+            }
+        }
 
         function clearAnalysisLayers() {
             Object.values(analysisLayers).forEach(arr => arr.forEach(l => map.removeLayer(l)));
@@ -663,7 +695,9 @@
 
             const props = feature && feature.properties ? feature.properties : {};
             const title = props.tooltip || `${analysisType.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())} Feature`;
-            const detailsHTML = props.details_html || props.popup_html || `<pre style="white-space:pre-wrap;word-break:break-word;">${JSON.stringify(props, null, 2)}</pre>`;
+            const detailsHTMLRaw = props.details_html || props.popup_html || `<pre style="white-space:pre-wrap;word-break:break-word;">${JSON.stringify(props, null, 2)}</pre>`;
+            const detailsHTML = sanitizeDetailsHTML(detailsHTMLRaw);
+            const cacheKey = featureCacheKey(analysisType, props, feature);
 
             detEl.innerHTML = `
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.5rem;">
@@ -679,7 +713,6 @@
                         Generate AI Suggestions
                     </button>
                 </div>
-                <div id="aiSuggestOut" style="margin-top:.6rem;"></div>
             `;
 
             const backBtn = document.getElementById('resultsBackBtn');
@@ -689,11 +722,41 @@
             };
 
             const aiBtn = document.getElementById('aiSuggestBtn');
-            const aiOut = document.getElementById('aiSuggestOut');
+            const scrollEl = document.getElementById('resultsDetailsScroll');
+
+            // Helper to append AI suggestions into the main details body
+            function appendAiToDetails(html) {
+                if (!scrollEl) return;
+                // If heading already present, just append content below it; else create heading section
+                let section = scrollEl.querySelector('.ai-suggest-section');
+                if (!section) {
+                    section = document.createElement('div');
+                    section.className = 'ai-suggest-section';
+                    section.innerHTML = `
+                        <hr style="margin:10px 0;">
+                        <div style="font-weight:700;margin-bottom:.4rem;">ai generated suggestions</div>
+                    `;
+                    scrollEl.appendChild(section);
+                }
+                const box = document.createElement('div');
+                box.style.cssText = 'padding:.6rem;border:1px solid #e7e9ee;border-radius:8px;background:#fff;margin-top:.4rem;';
+                box.innerHTML = html;
+                section.appendChild(box);
+            }
+
+            // If we already have cached content, render it and set button as Generated/disabled
+            if (aiSuggestionCache[cacheKey]) {
+                try { appendAiToDetails(aiSuggestionCache[cacheKey]); } catch(_) {}
+                if (aiBtn) {
+                    aiBtn.disabled = true;
+                    aiBtn.textContent = 'Generated';
+                }
+            }
+
             if (aiBtn) aiBtn.onclick = async () => {
+                if (aiSuggestionCache[cacheKey]) return; // already have it
                 aiBtn.disabled = true;
                 aiBtn.textContent = 'Generating…';
-                aiOut.innerHTML = '';
                 const prompt = (props.details_html || props.popup_html || JSON.stringify(props)).toString();
                 const type = analysisType.includes('green') ? 'green' : (analysisType.includes('aq') ? 'aq' : 'uhi');
                 try {
@@ -705,10 +768,11 @@
                     if (!resp.ok) throw new Error('AI error');
                     const data = await resp.json();
                     const content = data.response || 'No content';
-                    aiOut.innerHTML = `<div style="padding:.6rem;border:1px solid #e7e9ee;border-radius:8px;background:#fff;">${content}</div>`;
+                    aiSuggestionCache[cacheKey] = content; // cache
+                    appendAiToDetails(content);
+                    aiBtn.textContent = 'Generated';
                 } catch (e) {
-                    aiOut.innerHTML = `<div style="color:#b91c1c;">Error generating suggestions. Please try again.</div>`;
-                } finally {
+                    // Re-enable to allow retry on failure
                     aiBtn.disabled = false;
                     aiBtn.textContent = 'Generate AI Suggestions';
                 }
