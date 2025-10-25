@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Us • URBANALYSIS</title>
+    <link rel="stylesheet" href="/statics/styles.d112.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation (copied from index.html) -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <div class="nav-icon">
+                    <i class="fas fa-globe-americas"></i>
+                </div>
+                <span class="nav-title">URBANALYSIS</span>
+            </div>
+            
+            <div class="nav-menu" id="navMenu">
+                <a href="/statics/how-it-works.html" class="nav-link">
+                    <i class="fas fa-question-circle"></i>
+                    How it Works
+                </a>
+                <a href="/statics/about-us.html" class="nav-link">
+                    <i class="fas fa-users"></i>
+                    About Us
+                </a>
+                <a href="https://github.com/IamDipankar/nasa-space-app-web" target="_blank" class="nav-link">
+                    <i class="fab fa-github"></i>
+                    GitHub (View Source)
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="navToggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- About Us Section (copied from index.html) -->
+        <section id="about-us" class="info-section" style="padding-top: 2rem;">
+            <div class="info-content">
+                <h2 class="section-title">
+                    <i class="fas fa-users"></i>
+                    About Us
+                </h2>
+                <div class="about-content">
+                    <p class="about-text">
+                        We are <strong>Team CodeNebula</strong>, passionate about technological implementations for <strong>urban sustainablity </strong> and the <strong>environment. </strong>
+                    </p>
+                    <p class="about-text">
+                        This project was developed as part of the 
+                        <a href = "https://www.spaceappschallenge.org/2025/challenges/data-pathways-to-healthy-cities-and-human-settlements/" class = "about-text">
+                            NASA Space Apps Challenge 2025.
+                        </a>
+                    </p>
+
+                    <p class="about-text">
+                        Our mission is to make complex environmental data accessible and actionable for urban planners, researchers, and citizens who care about sustainable city development.
+                    </p>
+                    <div class="team-features">
+                        <div class="feature">
+                            <i class="fas fa-satellite"></i>
+                            <span>NASA Satellite Data Integration</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-brain"></i>
+                            <span>AI-Powered Analysis</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-leaf"></i>
+                            <span>Environmental Focus</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-leaf"></i>
+                            <span>Green Access Analysis</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-leaf"></i>
+                            <span>Urban Heat Island Analysis</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-leaf"></i>
+                            <span>Air Pollution Hotspot Analysis</span>
+                        </div>
+                        <div class="feature">
+                            <i class="fas fa-city"></i>
+                            <span>Urban Planning Support</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>&copy; 2025 Team CodeNebula</p>
+        </footer>
+    </div>
+
+    <!-- Minimal navbar toggle behavior (optional; index uses script.d113.js) -->
+    <script>
+        (function(){
+            const navbar = document.getElementById('navbar');
+            const navToggle = document.getElementById('navToggle');
+            const navMenu = document.getElementById('navMenu');
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            function toggleMobileMenu() {
+                if (!navToggle || !navMenu) return;
+                navToggle.classList.toggle('active');
+                navMenu.classList.toggle('active');
+                document.body.classList.toggle('menu-open', navMenu.classList.contains('active'));
+            }
+            function closeMobileMenu() {
+                if (!navToggle || !navMenu) return;
+                navToggle.classList.remove('active');
+                navMenu.classList.remove('active');
+                document.body.classList.remove('menu-open');
+            }
+            if (navToggle) navToggle.addEventListener('click', toggleMobileMenu);
+            document.addEventListener('click', function(event) {
+                if (navbar && !navbar.contains(event.target)) closeMobileMenu();
+            });
+            navLinks.forEach(link => link.addEventListener('click', closeMobileMenu));
+        })();
+    </script>
+</body>
+</html>

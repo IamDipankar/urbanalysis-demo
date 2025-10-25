@@ -16,10 +16,10 @@
         }
 
         /* Ensure navbar & dropdown are always above map and controls */
-    .navbar { z-index: 10000 !important; position: sticky; top: 0; background:#ffffff !important; color:#0f172a; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
-    .navbar .nav-link { color:#0f172a !important; }
-    .navbar .nav-title { color:#0f172a !important; }
-    .navbar .nav-icon { color:#0f172a !important; }
+    .navbar { z-index: 10000 !important; position: sticky; top: 0; background:#2563eb !important; color:#ffffff; box-shadow: 0 2px 10px rgba(0,0,0,.10); }
+    .navbar .nav-link { color:#ffffff !important; }
+    .navbar .nav-title { color:#ffffff !important; }
+    .navbar .nav-icon { color:#ffffff !important; }
         .nav-menu.active { z-index: 20000 !important; position: relative; }
 
         /* Leaflet controls below navbar/menu */
@@ -27,7 +27,7 @@
 
         .leaflet-control.custom-panel {
             background:#fff; border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,.15);
-            padding:0; width:280px; max-width:80vw; overflow:hidden; max-height:95vh;
+            padding:0; width:300px; max-width:80vw; overflow:hidden; max-height:95vh;
             font-family: 'Inter', sans-serif;
             color:#0f172a; /* ensure dark text on white background */
         }
@@ -169,11 +169,11 @@
             </div>
             
             <div class="nav-menu" id="navMenu">
-                <a href="/how-it-works" class="nav-link">
+                <a href="/statics/how-it-works.html" class="nav-link">
                     <i class="fas fa-question-circle"></i>
                     How it Works
                 </a>
-                <a href="#about-us" class="nav-link">
+                <a href="/statics/about-us.html" class="nav-link">
                     <i class="fas fa-users"></i>
                     About Us
                 </a>
@@ -229,6 +229,7 @@
             options: { position: 'topleft' },
             onAdd: function () {
                 const container = L.DomUtil.create('div', 'leaflet-control custom-panel');
+                container.id = 'leftPanelBox';
                 container.innerHTML = `
                 <div class="panel-header">
                     <span>URBANALYSIS</span>
@@ -493,6 +494,8 @@
         const runBtn = document.getElementById('runAnalysisBtn');
         const statusMsg = document.getElementById('statusMessage');
         const cancelBtn = document.getElementById('cancelAnalysisBtn');
+    const hideLeftPanel = () => { const el = document.getElementById('leftPanelBox'); if (el) el.classList.add('is-hidden'); };
+    const showLeftPanel = () => { const el = document.getElementById('leftPanelBox'); if (el) el.classList.remove('is-hidden'); };
 
         checkboxes.forEach(id => {
             document.addEventListener('change', (e) => {
@@ -951,6 +954,13 @@
                 map.addControl(drawControl);
             }
 
+            // Clear previous AOI boundary
+            try { drawnItems.clearLayers(); } catch(_) {}
+            layer = null;
+
+            // Show left panel again for new analysis
+            showLeftPanel();
+
             // Reset run button and status
             runBtn.disabled = !(layer && checkboxes.some(id => document.getElementById(id).checked));
             runBtn.querySelector('.btn-text').style.display = 'inline';
@@ -1012,6 +1022,8 @@
                         runBtn.querySelector('.btn-loading').style.display = 'none';
                         statusMsg.style.display = 'none';
                         cancelBtn.style.display = 'none';
+                        // Hide the left panel while showing results
+                        hideLeftPanel();
                         // Do NOT re-enable checkboxes/draw controls here
                         ensureRunNewAnalysisControl();
                     } else if (t === 'error') {

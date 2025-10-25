@@ -1,5 +1,5 @@
 from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, status, UploadFile, File, Form, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import asyncio
@@ -143,7 +143,7 @@ async def request_to_remote(request: AnalysisRequest, tried = 0):
 
 @app.get("/")
 async def read_root():
-    return FileResponse("statics/index.html")
+    return RedirectResponse("/statics/map.html")
 
 # -----------------------------
 # Server-Sent Events (SSE)
