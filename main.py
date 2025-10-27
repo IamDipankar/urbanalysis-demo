@@ -13,6 +13,7 @@ from models.llms import groq_api
 from models.db import Base, engine, SessionLocal, get_db
 from models.analysis_record import AnalysisRecord
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import markdown
 from markdownify import markdownify as md
 # from fastapi.middleware.cors import CORSMiddleware
@@ -156,6 +157,26 @@ def on_startup_create_tables():
     except Exception as e:
         # Don't block app startup if DB is unavailable
         print(f"[DB] Warning: failed to create tables: {e}")
+    # Best-effort lightweight migrations for dev (SQLite/Postgres)
+    try:
+        with engine.begin() as conn:
+            # Rename column aq_resutl -> aq_result if old name exists
+            try:
+                conn.execute(text("ALTER TABLE analysis_requests RENAME COLUMN aq_resutl TO aq_result"))
+            except Exception:
+                pass
+            # Add analysis_boundary column if missing
+            try:
+                conn.execute(text("ALTER TABLE analysis_requests ADD COLUMN analysis_boundary JSON"))
+            except Exception:
+                pass
+            # Add is_cleared column if missing
+            try:
+                conn.execute(text("ALTER TABLE analysis_requests ADD COLUMN is_cleared BOOLEAN DEFAULT 0"))
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[DB] Migration note: {e}")
 
 # -----------------------------
 # Server-Sent Events (SSE)
@@ -298,6 +319,7 @@ async def run_analysis(request: AnalysisRequest, background_tasks: BackgroundTas
                     uhi_hotspot=("uhi_hotspots" in request.analyses),
                     aq_hotspot=("aq_hotspots" in request.analyses),
                     green_access=("green_access" in request.analyses),
+                    analysis_boundary=request.geojson,
                 )
                 db.add(rec)
                 db.commit()
@@ -306,6 +328,7 @@ async def run_analysis(request: AnalysisRequest, background_tasks: BackgroundTas
                 existing.uhi_hotspot = ("uhi_hotspots" in request.analyses)
                 existing.aq_hotspot = ("aq_hotspots" in request.analyses)
                 existing.green_access = ("green_access" in request.analyses)
+                existing.analysis_boundary = request.geojson
                 db.commit()
         finally:
             db.close()
@@ -560,7 +583,7 @@ async def push_event(request: Request, session_id: Optional[str] = None, message
                         rec.uhi_result = payload
                     elif analysis == "aq_hotspots":
                         rec.aq_hotspot_complete_time = duration
-                        rec.aq_resutl = payload
+                        rec.aq_result = payload
                     elif analysis == "green_access":
                         rec.green_access_complete_time = duration
                         rec.green_access_result = payload
@@ -642,8 +665,8 @@ def fetch_analysis_result(request_id: str):
             if rec.uhi_result is not None:
                 data["uhi_hotspots"] = rec.uhi_result
                 completed.append("uhi_hotspots")
-            if rec.aq_resutl is not None:
-                data["aq_hotspots"] = rec.aq_resutl
+            if getattr(rec, "aq_result", None) is not None:
+                data["aq_hotspots"] = rec.aq_result
                 completed.append("aq_hotspots")
             if rec.green_access_result is not None:
                 data["green_access"] = rec.green_access_result
@@ -668,7 +691,7 @@ def fetch_analysis_result(request_id: str):
                             if atype == "uhi_hotspots":
                                 rec.uhi_result = payload
                             elif atype == "aq_hotspots":
-                                rec.aq_resutl = payload
+                                rec.aq_result = payload
                             elif atype == "green_access":
                                 rec.green_access_result = payload
                         except Exception:
@@ -690,6 +713,7 @@ def fetch_analysis_result(request_id: str):
                     "green_access": rec.green_access_complete_time,
                 },
                 "data": data,
+                "boundary": rec.analysis_boundary,
             }
         finally:
             db.close()
@@ -697,3 +721,54 @@ def fetch_analysis_result(request_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching result: {e}")
+
+
+@app.post("/history/clear")
+async def clear_history_records(request: Request):
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}")
+    ids = body.get("request_ids")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="request_ids must be a non-empty list")
+    try:
+        db: Session = SessionLocal()
+        try:
+            q = db.query(AnalysisRecord).filter(AnalysisRecord.request_id.in_(ids))
+            updated = 0
+            for rec in q:
+                rec.is_cleared = True
+                updated += 1
+            db.commit()
+            return {"updated": updated}
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating records: {e}")
+
+
+@app.post("/history/clear-all")
+async def clear_history_all_records(request: Request):
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}")
+    ids = body.get("request_ids")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(status_code=400, detail="request_ids must be a non-empty list")
+    try:
+        db: Session = SessionLocal()
+        try:
+            q = db.query(AnalysisRecord).filter(AnalysisRecord.request_id.in_(ids))
+            updated = 0
+            for rec in q:
+                if not rec.is_cleared:
+                    rec.is_cleared = True
+                    updated += 1
+            db.commit()
+            return {"updated": updated}
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating records: {e}")

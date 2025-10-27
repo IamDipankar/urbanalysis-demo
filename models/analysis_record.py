@@ -29,9 +29,15 @@ class AnalysisRecord(Base):
 
     # Results payloads (use generic JSON for cross-database compatibility)
     uhi_result = Column(JSON, nullable=True)
-    aq_resutl = Column(JSON, nullable=True)  # Intentionally matching requested name
+    aq_result = Column(JSON, nullable=True)
     green_access_result = Column(JSON, nullable=True)
 
     # Misc
     any_other_result = Column(JSON, nullable=True)
     remarks = Column(Text, nullable=True)
+
+    # Analysis boundary (GeoJSON of the AOI)
+    analysis_boundary = Column(JSON, nullable=True)
+
+    # Client-cleared flag for history management
+    is_cleared = Column(Boolean, default=False, nullable=False)

@@ -610,14 +610,14 @@ def run(session_id=None, ee_geometry=None, aoi_bbox=None, geoJson = None):
         if not feature:
             raise ValueError("Invalid GeoJSON provided.")
         ee_geometry = ee.Geometry(feature.get('geometry'))
-        ee_bbox = ee_geometry.bounds().getInfo().get('coordinates', None)
-        if ee_bbox:
-            ee_bbox = ee_bbox[0]
-            longs, lats = zip(*ee_bbox)
-            ee_bbox = [min(longs), min(lats), max(longs), max(lats)]
+        aoi_bbox = ee_geometry.bounds().getInfo().get('coordinates', None)
+        if aoi_bbox:
+            aoi_bbox = aoi_bbox[0]
+            longs, lats = zip(*aoi_bbox)
+            aoi_bbox = [min(longs), min(lats), max(longs), max(lats)]
 
-        print(f"BBOX from GeoJSON: {ee_bbox}")
-        
+        print(f"BBOX from GeoJSON: {aoi_bbox}")
+
     print("Started aq hotspot analysis… Session:", session_id)
 
     aoi = ee_geometry or ee.Geometry.Rectangle(AOI_BBOX)

@@ -434,6 +434,8 @@
 
                     // Set global AOI reference to the FeatureGroup of created layers (ensures toGeoJSON works)
                     window.layer = L.featureGroup(createdLayers);
+                    // Remember location label from search
+                    try { window.currentLocationLabel = (item.display_name || 'Custom boundary'); } catch(_) {}
 
                     // Fit bounds to the combined geometry
                     try { if (combinedBounds) map.fitBounds(combinedBounds, { padding:[20,20] }); } catch(_){ }
@@ -488,6 +490,7 @@
             layer = e.layer;
             drawnItems.addLayer(layer);
             updateButtonState();
+            try { window.currentLocationLabel = 'Custom boundary'; } catch(_) {}
         });
 
         const checkboxes = ['aq_hotspots', 'uhi_hotspots', 'green_access'];
@@ -506,6 +509,29 @@
         function updateButtonState() {
             const selected = checkboxes.some(id => document.getElementById(id).checked);
             runBtn.disabled = !(layer && selected);
+        }
+
+        // Enable/disable left panel inputs (checkboxes, draw tools, place search)
+        function setLeftInputsEnabled(enabled) {
+            try {
+                checkboxes.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.disabled = !enabled;
+                });
+                if (enabled) {
+                    try {
+                        if (!map.hasControl || typeof map.hasControl !== 'function' || !map.hasControl(drawControl)) {
+                            map.addControl(drawControl);
+                        }
+                    } catch(_) { try { map.addControl(drawControl); } catch(_){} }
+                } else {
+                    try { drawControl.remove(); } catch(_) {}
+                }
+                if (typeof window.setSearchEnabled === 'function') {
+                    try { window.setSearchEnabled(enabled); } catch(_) {}
+                }
+                try { updateButtonState(); } catch(_) {}
+            } catch(_) {}
         }
 
         // --- Helpers to toggle "running..." UI (NEW) ---
@@ -594,10 +620,16 @@
                     c.innerHTML = `
                         <div class="panel-header" style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
                             <span>Results</span>
-                            <button id="resultsBackToHistoryBtn" style="display:none;padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">History</button>
+                            <div style="display:flex;gap:6px;">
+                                <button id="resultsBackToHistoryBtn" style="display:none;padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">History</button>
+                            </div>
                         </div>
                         <div class="panel-body">
-                            <div id="historyBody" style="display:block;"></div>
+                            <div id="historyBody" style="display:block;">
+                                <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
+                                    <button id="resultsClearHistoryBtn" title="Clear history (marks server rows as cleared)" style="padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">Clear History</button>
+                                </div>
+                            </div>
                             <div id="resultsToggleBody" style="display:none;">
                                 <p>Show or hide analysis layers.</p>
                             </div>
@@ -612,7 +644,18 @@
             new ResultsToggle().addTo(map);
             // Wire History button
             const hb = document.getElementById('resultsBackToHistoryBtn');
-            if (hb) hb.addEventListener('click', () => setResultsMode('history'));
+            if (hb) hb.addEventListener('click', () => {
+                try { clearAnalysisLayers(); } catch(_) {}
+                try { removeResultsLegend(); } catch(_) {}
+                try { clearHistoryBoundaryLayer(); } catch(_) {}
+                try { setLeftInputsEnabled(true); } catch(_) {}
+                try { setResultsMode('history'); } catch(_) {}
+                try { renderHistoryList(); } catch(_) {}
+                try { resetForNewAnalysis (); } catch (_) {console.log("Reset for new analysis failed");}
+            });
+            // Wire Clear History button
+            const ch = document.getElementById('resultsClearHistoryBtn');
+            if (ch) ch.addEventListener('click', clearHistoryAll);
             // Initial render of history
             renderHistoryList();
         }
@@ -690,20 +733,30 @@
             const detEl = document.getElementById('resultsDetailsBody');
             const histEl = document.getElementById('historyBody');
             const backBtn = document.getElementById('resultsBackToHistoryBtn');
+            const clearHistBtn = document.getElementById('resultsClearHistoryBtn');
             if (!listEl || !detEl) return;
             if (histEl) histEl.style.display = (mode === 'history') ? 'block' : 'none';
             if (mode === 'details') {
                 listEl.style.display = 'none';
                 detEl.style.display = 'block';
                 if (backBtn) backBtn.style.display = 'inline-block';
+                if (clearHistBtn) clearHistBtn.style.display = 'none';
+                // Hide left panel while showing results
+                try { hideLeftPanel(); } catch(_) {}
             } else if (mode === 'list') {
                 detEl.style.display = 'none';
                 listEl.style.display = 'block';
                 if (backBtn) backBtn.style.display = 'inline-block';
+                if (clearHistBtn) clearHistBtn.style.display = 'none';
+                // Hide left panel while showing results list
+                try { hideLeftPanel(); } catch(_) {}
             } else { // history
                 detEl.style.display = 'none';
                 listEl.style.display = 'none';
                 if (backBtn) backBtn.style.display = 'none';
+                if (clearHistBtn) clearHistBtn.style.display = 'inline-block';
+                // Show left panel again in history mode
+                try { showLeftPanel(); } catch(_) {}
             }
         }
 
@@ -1013,26 +1066,46 @@
             list.unshift(item);
             saveHistory(list);
         }
+        let historyBoundaryLayer = null;
+        function clearHistoryBoundaryLayer() {
+            try { if (historyBoundaryLayer) { map.removeLayer(historyBoundaryLayer); historyBoundaryLayer = null; } } catch(_) {}
+        }
+
         function renderHistoryList() {
             ensureResultsToggles();
             const histEl = document.getElementById('historyBody');
             if (!histEl) return;
             const list = loadHistory();
             if (!list.length) {
-                histEl.innerHTML = '<p>No history yet. Run an analysis to see it here.</p>';
+                histEl.innerHTML = `
+                    <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
+                        <button id="resultsClearHistoryBtn" title="Clear history (marks server rows as cleared)" style="padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">Clear History</button>
+                    </div>
+                    <p>No history yet. Run an analysis to see it here.</p>`;
+                // Re-wire clear button after DOM update
+                const ch0 = document.getElementById('resultsClearHistoryBtn');
+                if (ch0) ch0.addEventListener('click', clearHistoryAll);
                 return;
             }
             const rows = list.map(it => {
                 const started = it.started_at ? new Date(it.started_at) : null;
                 const completed = it.completed_at ? new Date(it.completed_at) : null;
                 const when = completed || started;
-                const label = when ? when.toLocaleString() : '(time unknown)';
+                const dtLabel = when ? when.toLocaleString() : '(time unknown)';
+                const locLabel = it.location_label || 'Custom boundary';
                 return `<div class="hist-row" data-id="${it.request_id}" style="padding:.45rem .5rem;border:1px solid #e7e9ee;border-radius:8px;margin-bottom:.45rem;cursor:pointer;">
-                    <div style="font-weight:700;">${it.request_id}</div>
-                    <div style="font-size:.85rem;color:#555;">${label}</div>
+                    <div style="font-weight:700;">${dtLabel}</div>
+                    <div style="font-size:.85rem;color:#555;">${locLabel}</div>
                 </div>`;
             }).join('');
-            histEl.innerHTML = rows;
+            histEl.innerHTML = `
+                <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
+                    <button id="resultsClearHistoryBtn" title="Clear history (marks server rows as cleared)" style="padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">Clear History</button>
+                </div>
+                ${rows}`;
+            // Re-wire clear button after DOM update
+            const ch = document.getElementById('resultsClearHistoryBtn');
+            if (ch) ch.addEventListener('click', clearHistoryAll);
             histEl.querySelectorAll('.hist-row').forEach(row => {
                 row.addEventListener('click', async () => {
                     const rid = row.getAttribute('data-id');
@@ -1043,6 +1116,7 @@
                         // Clear any existing rendered layers
                         clearAnalysisLayers();
                         removeResultsLegend();
+                        clearHistoryBoundaryLayer();
                         // Render each available analysis
                         if (data && data.data) {
                             Object.entries(data.data).forEach(([atype, payload]) => {
@@ -1051,6 +1125,20 @@
                                 }
                             });
                         }
+                        // Draw boundary if provided
+                        if (data && data.boundary) {
+                            try {
+                                historyBoundaryLayer = L.geoJSON(data.boundary, {
+                                    style: { color:'#2b8a3e', weight:2, fillColor:'#66bb6a', fillOpacity:0.2 },
+                                    interactive: false
+                                }).addTo(map);
+                                // Ensure boundary sits below analysis overlays to allow feature clicks
+                                try { historyBoundaryLayer.eachLayer(l => l.bringToBack()); } catch(_) {}
+                                try { map.fitBounds(historyBoundaryLayer.getBounds(), { padding:[20,20] }); } catch(_) {}
+                            } catch(_) {}
+                        }
+                        // Lock left inputs like during results display
+                        try { setLeftInputsEnabled(false); } catch(_) {}
                         // Switch panel into results list mode
                         setResultsMode('list');
                     } catch (e) {
@@ -1058,6 +1146,24 @@
                     }
                 });
             });
+        }
+
+        async function clearHistoryAll() {
+            const list = loadHistory();
+            if (!list.length) return;
+            const ok = confirm('Clear ALL history?');
+            if (!ok) return;
+            try {
+                const request_ids = list.map(x => x.request_id);
+                await fetch('/history/clear-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ request_ids })
+                });
+            } catch(_) {}
+            // Clear local copy and refresh UI
+            saveHistory([]);
+            renderHistoryList();
         }
 
         // Track run times for history
@@ -1117,7 +1223,7 @@
 
                         // Append to local history and refresh
                         try {
-                            upsertHistoryItem({ request_id: currentSessionId, started_at: runStartedAt, completed_at: new Date().toISOString() });
+                            upsertHistoryItem({ request_id: currentSessionId, started_at: runStartedAt, completed_at: new Date().toISOString(), location_label: (window.currentLocationLabel || 'Custom boundary') });
                             renderHistoryList();
                         } catch(_){}
                     } else if (t === 'error') {
