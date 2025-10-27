@@ -4,6 +4,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <style>
+        /* Prevent the page from scrolling; map + navbar fill the viewport */
+        html, body { height: 100vh; margin: 0; padding: 0 !important; overflow: hidden !important; overscroll-behavior: none; }
+        /* Active state for clicked history row */
+        .hist-row.active { border-color:#2563eb !important; background: rgba(37,99,235,0.06); }
+
         #map {
             top: 0; 
             bottom: 0; 
@@ -16,10 +21,12 @@
         }
 
         /* Ensure navbar & dropdown are always above map and controls */
-    .navbar { z-index: 10000 !important; position: sticky; top: 0; background:#2563eb !important; color:#ffffff; box-shadow: 0 2px 10px rgba(0,0,0,.10); }
+    .navbar { z-index: 10000 !important; position: sticky; top: 0; background:#2563eb !important; color:#ffffff; box-shadow: 0 2px 10px rgba(0,0,0,.10); padding: 0.5rem 0 !important; }
     .navbar .nav-link { color:#ffffff !important; }
     .navbar .nav-title { color:#ffffff !important; }
     .navbar .nav-icon { color:#ffffff !important; }
+    /* Keep navbar thin regardless of scroll */
+    .navbar.scrolled { padding: 0.5rem 0 !important; }
         .nav-menu.active { z-index: 20000 !important; position: relative; }
 
         /* Leaflet controls below navbar/menu */
@@ -619,17 +626,15 @@
                     c.id = 'resultsToggleBox';
                     c.innerHTML = `
                         <div class="panel-header" style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
-                            <span>Results</span>
+                            <span id="resultsPanelTitle">Results</span>
                             <div style="display:flex;gap:6px;">
+                                <button id="resultsClearHistoryBtn" title="Clear history (marks server rows as cleared)" style="padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">Clear History</button>
                                 <button id="resultsBackToHistoryBtn" style="display:none;padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">History</button>
                             </div>
                         </div>
                         <div class="panel-body">
-                            <div id="historyBody" style="display:block;">
-                                <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
-                                    <button id="resultsClearHistoryBtn" title="Clear history (marks server rows as cleared)" style="padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">Clear History</button>
-                                </div>
-                            </div>
+                            <div id="historyLoading" style="display:none;padding:.4rem .6rem;border:1px solid #d9ddea;border-radius:6px;background:#fff;color:#2563eb;font-weight:700;margin-bottom:.5rem;">Loading…</div>
+                            <div id="historyBody" style="display:block;"></div>
                             <div id="resultsToggleBody" style="display:none;">
                                 <p>Show or hide analysis layers.</p>
                             </div>
@@ -653,7 +658,7 @@
                 try { renderHistoryList(); } catch(_) {}
                 try { resetForNewAnalysis (); } catch (_) {console.log("Reset for new analysis failed");}
             });
-            // Wire Clear History button
+            // Wire Clear History button (header)
             const ch = document.getElementById('resultsClearHistoryBtn');
             if (ch) ch.addEventListener('click', clearHistoryAll);
             // Initial render of history
@@ -734,6 +739,7 @@
             const histEl = document.getElementById('historyBody');
             const backBtn = document.getElementById('resultsBackToHistoryBtn');
             const clearHistBtn = document.getElementById('resultsClearHistoryBtn');
+            const titleEl = document.getElementById('resultsPanelTitle');
             if (!listEl || !detEl) return;
             if (histEl) histEl.style.display = (mode === 'history') ? 'block' : 'none';
             if (mode === 'details') {
@@ -741,6 +747,7 @@
                 detEl.style.display = 'block';
                 if (backBtn) backBtn.style.display = 'inline-block';
                 if (clearHistBtn) clearHistBtn.style.display = 'none';
+                if (titleEl) titleEl.textContent = 'Results';
                 // Hide left panel while showing results
                 try { hideLeftPanel(); } catch(_) {}
             } else if (mode === 'list') {
@@ -748,6 +755,7 @@
                 listEl.style.display = 'block';
                 if (backBtn) backBtn.style.display = 'inline-block';
                 if (clearHistBtn) clearHistBtn.style.display = 'none';
+                if (titleEl) titleEl.textContent = 'Results';
                 // Hide left panel while showing results list
                 try { hideLeftPanel(); } catch(_) {}
             } else { // history
@@ -755,6 +763,7 @@
                 listEl.style.display = 'none';
                 if (backBtn) backBtn.style.display = 'none';
                 if (clearHistBtn) clearHistBtn.style.display = 'inline-block';
+                if (titleEl) titleEl.textContent = 'Histories';
                 // Show left panel again in history mode
                 try { showLeftPanel(); } catch(_) {}
             }
@@ -1077,14 +1086,7 @@
             if (!histEl) return;
             const list = loadHistory();
             if (!list.length) {
-                histEl.innerHTML = `
-                    <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
-                        <button id="resultsClearHistoryBtn" title="Clear history (marks server rows as cleared)" style="padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">Clear History</button>
-                    </div>
-                    <p>No history yet. Run an analysis to see it here.</p>`;
-                // Re-wire clear button after DOM update
-                const ch0 = document.getElementById('resultsClearHistoryBtn');
-                if (ch0) ch0.addEventListener('click', clearHistoryAll);
+                histEl.innerHTML = `<p>No history yet. Run an analysis to see it here.</p>`;
                 return;
             }
             const rows = list.map(it => {
@@ -1098,16 +1100,18 @@
                     <div style="font-size:.85rem;color:#555;">${locLabel}</div>
                 </div>`;
             }).join('');
-            histEl.innerHTML = `
-                <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem;">
-                    <button id="resultsClearHistoryBtn" title="Clear history (marks server rows as cleared)" style="padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">Clear History</button>
-                </div>
-                ${rows}`;
-            // Re-wire clear button after DOM update
-            const ch = document.getElementById('resultsClearHistoryBtn');
-            if (ch) ch.addEventListener('click', clearHistoryAll);
+            histEl.innerHTML = rows;
             histEl.querySelectorAll('.hist-row').forEach(row => {
                 row.addEventListener('click', async () => {
+                    // Highlight the selected row immediately
+                    try {
+                        histEl.querySelectorAll('.hist-row.active').forEach(r => r.classList.remove('active'));
+                        row.classList.add('active');
+                    } catch(_) {}
+
+                    // Show loading message
+                    const loadEl = document.getElementById('historyLoading');
+                    if (loadEl) loadEl.style.display = 'block';
                     const rid = row.getAttribute('data-id');
                     try {
                         const resp = await fetch(`/analysis-result/${rid}`);
@@ -1141,8 +1145,12 @@
                         try { setLeftInputsEnabled(false); } catch(_) {}
                         // Switch panel into results list mode
                         setResultsMode('list');
+                        // Hide loading message
+                        if (loadEl) loadEl.style.display = 'none';
                     } catch (e) {
                         alert('Failed to load that analysis from server.');
+                        // Hide loading message on error
+                        if (loadEl) loadEl.style.display = 'none';
                     }
                 });
             });
@@ -1375,11 +1383,7 @@
         const navMenu = document.getElementById('navMenu');
         const navLinks = document.querySelectorAll('.nav-link');
 
-        function handleNavbarScroll() {
-            const scrollY = window.scrollY;
-            if (scrollY > 50) navbar.classList.add('scrolled');
-            else navbar.classList.remove('scrolled');
-        }
+        // Removed scroll-based navbar resizing
 
         function toggleMobileMenu() {
             navToggle.classList.toggle('active');
@@ -1394,7 +1398,6 @@
             document.body.classList.remove('menu-open');
         }
 
-        window.addEventListener('scroll', handleNavbarScroll);
         if (navToggle) navToggle.addEventListener('click', toggleMobileMenu);
         document.addEventListener('click', function(event) {
             if (!navbar.contains(event.target)) closeMobileMenu();
