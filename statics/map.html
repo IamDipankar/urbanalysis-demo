@@ -592,9 +592,13 @@
                     const c = L.DomUtil.create('div', 'leaflet-control custom-panel');
                     c.id = 'resultsToggleBox';
                     c.innerHTML = `
-                        <div class="panel-header"><span>Results</span></div>
+                        <div class="panel-header" style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+                            <span>Results</span>
+                            <button id="resultsBackToHistoryBtn" style="display:none;padding:.35rem .55rem;border:1px solid #d9ddea;border-radius:6px;background:white;cursor:pointer;font-weight:600;">History</button>
+                        </div>
                         <div class="panel-body">
-                            <div id="resultsToggleBody">
+                            <div id="historyBody" style="display:block;"></div>
+                            <div id="resultsToggleBody" style="display:none;">
                                 <p>Show or hide analysis layers.</p>
                             </div>
                             <div id="resultsDetailsBody" style="display:none;"></div>
@@ -606,6 +610,11 @@
                 }
             });
             new ResultsToggle().addTo(map);
+            // Wire History button
+            const hb = document.getElementById('resultsBackToHistoryBtn');
+            if (hb) hb.addEventListener('click', () => setResultsMode('history'));
+            // Initial render of history
+            renderHistoryList();
         }
 
         function addToggleForAnalysis(analysisType) {
@@ -679,13 +688,22 @@
             ensureResultsToggles();
             const listEl = document.getElementById('resultsToggleBody');
             const detEl = document.getElementById('resultsDetailsBody');
+            const histEl = document.getElementById('historyBody');
+            const backBtn = document.getElementById('resultsBackToHistoryBtn');
             if (!listEl || !detEl) return;
+            if (histEl) histEl.style.display = (mode === 'history') ? 'block' : 'none';
             if (mode === 'details') {
                 listEl.style.display = 'none';
                 detEl.style.display = 'block';
-            } else {
+                if (backBtn) backBtn.style.display = 'inline-block';
+            } else if (mode === 'list') {
                 detEl.style.display = 'none';
                 listEl.style.display = 'block';
+                if (backBtn) backBtn.style.display = 'inline-block';
+            } else { // history
+                detEl.style.display = 'none';
+                listEl.style.display = 'none';
+                if (backBtn) backBtn.style.display = 'none';
             }
         }
 
@@ -832,6 +850,9 @@
             if (payload.legend) {
                 addOrUpdateAnalysisLegend(analysisType, payload.legend);
             }
+
+            // When rendering results, ensure we're in results list mode (not history)
+            try { setResultsMode('list'); } catch(_) {}
         }
 
         // --- Legend control (bottom-left), accumulates legends per analysis ---
@@ -974,7 +995,73 @@
             }
 
             updateButtonState();
+
+            // Return the right panel to History mode and refresh list
+            try { ensureResultsToggles(); setResultsMode('history'); renderHistoryList(); } catch(_) {}
         }
+
+        // --- Local history management ---
+        const HISTORY_KEY = 'urbanalysis_history';
+        function loadHistory() {
+            try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch(_) { return []; }
+        }
+        function saveHistory(list) {
+            try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch(_) {}
+        }
+        function upsertHistoryItem(item) {
+            const list = loadHistory().filter(x => x.request_id !== item.request_id);
+            list.unshift(item);
+            saveHistory(list);
+        }
+        function renderHistoryList() {
+            ensureResultsToggles();
+            const histEl = document.getElementById('historyBody');
+            if (!histEl) return;
+            const list = loadHistory();
+            if (!list.length) {
+                histEl.innerHTML = '<p>No history yet. Run an analysis to see it here.</p>';
+                return;
+            }
+            const rows = list.map(it => {
+                const started = it.started_at ? new Date(it.started_at) : null;
+                const completed = it.completed_at ? new Date(it.completed_at) : null;
+                const when = completed || started;
+                const label = when ? when.toLocaleString() : '(time unknown)';
+                return `<div class="hist-row" data-id="${it.request_id}" style="padding:.45rem .5rem;border:1px solid #e7e9ee;border-radius:8px;margin-bottom:.45rem;cursor:pointer;">
+                    <div style="font-weight:700;">${it.request_id}</div>
+                    <div style="font-size:.85rem;color:#555;">${label}</div>
+                </div>`;
+            }).join('');
+            histEl.innerHTML = rows;
+            histEl.querySelectorAll('.hist-row').forEach(row => {
+                row.addEventListener('click', async () => {
+                    const rid = row.getAttribute('data-id');
+                    try {
+                        const resp = await fetch(`/analysis-result/${rid}`);
+                        if (!resp.ok) throw new Error('Not found');
+                        const data = await resp.json();
+                        // Clear any existing rendered layers
+                        clearAnalysisLayers();
+                        removeResultsLegend();
+                        // Render each available analysis
+                        if (data && data.data) {
+                            Object.entries(data.data).forEach(([atype, payload]) => {
+                                if (payload && (atype === 'aq_hotspots' || atype === 'uhi_hotspots' || atype === 'green_access')) {
+                                    renderPayload(atype, payload);
+                                }
+                            });
+                        }
+                        // Switch panel into results list mode
+                        setResultsMode('list');
+                    } catch (e) {
+                        alert('Failed to load that analysis from server.');
+                    }
+                });
+            });
+        }
+
+        // Track run times for history
+        let runStartedAt = null;
 
         async function startRun() {
             if (!layer) return;
@@ -1003,6 +1090,7 @@
             }
             // Show status only after backend accepted the job
             statusMsg.style.display = 'block';
+            runStartedAt = new Date().toISOString();
 
             // SSE stream
             if (es) { try { es.close(); } catch(_){} }
@@ -1026,6 +1114,12 @@
                         hideLeftPanel();
                         // Do NOT re-enable checkboxes/draw controls here
                         ensureRunNewAnalysisControl();
+
+                        // Append to local history and refresh
+                        try {
+                            upsertHistoryItem({ request_id: currentSessionId, started_at: runStartedAt, completed_at: new Date().toISOString() });
+                            renderHistoryList();
+                        } catch(_){}
                     } else if (t === 'error') {
                         console.error('Server error:', data.message);
                     }
@@ -1054,6 +1148,13 @@
 
             // NEW: transform analysis list UI
             showRunningIndicators();
+            // Disable history interactions during run
+            try {
+                ensureResultsToggles();
+                setResultsMode('history');
+                const hb = document.getElementById('historyBody');
+                if (hb) { hb.style.pointerEvents = 'none'; hb.style.opacity = '.6'; }
+            } catch(_){}
 
             // Clear previous results
             clearAnalysisLayers();
@@ -1061,6 +1162,8 @@
             removeResultsLegend();
             removeRunNewControl();
             await startRun();
+            // Re-enable history UI (it will get updated after completion)
+            try { const hb = document.getElementById('historyBody'); if (hb) { hb.style.pointerEvents = ''; hb.style.opacity = ''; } } catch(_){}
         });
 
         cancelBtn.addEventListener('click', () => {
@@ -1131,14 +1234,17 @@
                 onAdd: function () {
                     const c = L.DomUtil.create('div', 'leaflet-control');
                     c.id = 'coordsBox';
-                    c.style.background = 'white';
-                    c.style.padding = '6px 10px';
-                    c.style.borderRadius = '8px';
-                    c.style.boxShadow = '0 6px 24px rgba(0,0,0,.15)';
+                    // Compact, subtle badge style
+                    c.style.background = 'rgba(255,255,255,0.9)';
+                    c.style.padding = '2px 6px';
+                    c.style.border = '1px solid rgba(0,0,0,0.15)';
+                    c.style.borderRadius = '4px';
+                    c.style.boxShadow = '0 1px 4px rgba(0,0,0,0.08)';
                     c.style.fontFamily = 'Inter, sans-serif';
-                    c.style.fontSize = '.9rem';
-                    c.style.marginTop = '8px';
+                    c.style.fontSize = '.75rem';
+                    c.style.marginTop = '4px';
                     c.style.color = '#0f172a';
+                    c.style.pointerEvents = 'none';
                     c.innerHTML = 'Lat: --, Lon: --';
                     L.DomEvent.disableClickPropagation(c);
                     L.DomEvent.disableScrollPropagation(c);
@@ -1189,6 +1295,13 @@
         });
         navLinks.forEach(link => {
             link.addEventListener('click', closeMobileMenu);
+        });
+    </script>
+
+    <!-- Initialize History Panel on load -->
+    <script>
+        window.addEventListener('load', function(){
+            try { ensureResultsToggles(); setResultsMode('history'); renderHistoryList(); } catch(_) {}
         });
     </script>
 </body>

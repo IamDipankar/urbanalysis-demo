@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, status, UploadFile, File, Form, Request
+from fastapi import FastAPI, WebSocket, HTTPException, BackgroundTasks, status, UploadFile, File, Form, Request, Depends
 from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -10,6 +10,9 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 from models.anlyzers import router_lite
 from models.llms import groq_api
+from models.db import Base, engine, SessionLocal, get_db
+from models.analysis_record import AnalysisRecord
+from sqlalchemy.orm import Session
 import markdown
 from markdownify import markdownify as md
 # from fastapi.middleware.cors import CORSMiddleware
@@ -145,6 +148,15 @@ async def request_to_remote(request: AnalysisRequest, tried = 0):
 async def read_root():
     return RedirectResponse("/statics/map.html")
 
+# Create tables on startup
+@app.on_event("startup")
+def on_startup_create_tables():
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        # Don't block app startup if DB is unavailable
+        print(f"[DB] Warning: failed to create tables: {e}")
+
 # -----------------------------
 # Server-Sent Events (SSE)
 # -----------------------------
@@ -275,6 +287,31 @@ async def run_analysis(request: AnalysisRequest, background_tasks: BackgroundTas
 
     await asyncio.sleep(1)
     
+    # Persist analysis request to DB (best-effort)
+    try:
+        db: Session = SessionLocal()
+        try:
+            existing = db.query(AnalysisRecord).filter(AnalysisRecord.request_id == request.session_id).one_or_none()
+            if existing is None:
+                rec = AnalysisRecord(
+                    request_id=request.session_id,
+                    uhi_hotspot=("uhi_hotspots" in request.analyses),
+                    aq_hotspot=("aq_hotspots" in request.analyses),
+                    green_access=("green_access" in request.analyses),
+                )
+                db.add(rec)
+                db.commit()
+            else:
+                # Update flags in case of retry
+                existing.uhi_hotspot = ("uhi_hotspots" in request.analyses)
+                existing.aq_hotspot = ("aq_hotspots" in request.analyses)
+                existing.green_access = ("green_access" in request.analyses)
+                db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[DB] Warning: failed to record request {request.session_id}: {e}")
+
     # Start analyses in background
     background_tasks.add_task(request_to_remote, request)
     
@@ -496,7 +533,56 @@ async def push_event(request: Request, session_id: Optional[str] = None, message
     elif etype == "error":
         analysis_status[session_id]["status"] = "error"
 
-    # Broadcast to connected SSE clients
+    # Persist event data to DB before broadcasting (best-effort)
+    try:
+        if session_id:
+            db: Session = SessionLocal()
+            try:
+                rec = db.query(AnalysisRecord).filter(AnalysisRecord.request_id == session_id).one_or_none()
+                if rec is None:
+                    # Create placeholder if missing (shouldn't normally happen)
+                    rec = AnalysisRecord(request_id=session_id)
+                    db.add(rec)
+                    db.commit()
+                    db.refresh(rec)
+
+                if etype == "analysis_complete" and analysis:
+                    # Compute completion duration in seconds
+                    try:
+                        started_at = rec.request_coming_time
+                        duration = (datetime.utcnow() - started_at).total_seconds() if started_at else None
+                    except Exception:
+                        duration = None
+
+                    payload = event.get("data")
+                    if analysis == "uhi_hotspots":
+                        rec.uhi_hotspot_complete_time = duration
+                        rec.uhi_result = payload
+                    elif analysis == "aq_hotspots":
+                        rec.aq_hotspot_complete_time = duration
+                        rec.aq_resutl = payload
+                    elif analysis == "green_access":
+                        rec.green_access_complete_time = duration
+                        rec.green_access_result = payload
+                    else:
+                        # Unknown analysis types go to misc bucket
+                        rec.any_other_result = payload
+                    db.commit()
+
+                if etype == "error":
+                    # Optionally record remarks
+                    msg = event.get("message") or "error"
+                    if rec.remarks:
+                        rec.remarks += f"\n{msg}"
+                    else:
+                        rec.remarks = str(msg)
+                    db.commit()
+            finally:
+                db.close()
+    except Exception as e:
+        print(f"[DB] Warning: failed to persist event for {session_id}: {e}")
+
+    # Broadcast to connected SSE clients (after DB write)
     await _broadcast_event(session_id, event)
     return {"message": "ok"}
 
@@ -512,3 +598,102 @@ async def update_analysis_status(session_id: str, status: str):
         raise HTTPException(status_code=404, detail="Analysis session not found")
     analysis_status[session_id] = json.loads(status)
     return {"message": "Status updated successfully"}
+
+
+@app.get("/analysis-result/{request_id}")
+def fetch_analysis_result(request_id: str):
+    """Fetch stored results for a given request_id from the database.
+    Returns a normalized structure compatible with the frontend renderer.
+    """
+    try:
+        db: Session = SessionLocal()
+        try:
+            rec = db.query(AnalysisRecord).filter(AnalysisRecord.request_id == request_id).one_or_none()
+            if rec is None:
+                # Fallback: try to use in-memory session results if available, then persist to DB
+                mem = analysis_status.get(request_id)
+                if not mem:
+                    raise HTTPException(status_code=404, detail="Request not found")
+
+                # Create a minimal record from memory to avoid future 404s
+                try:
+                    rec = AnalysisRecord(
+                        request_id=request_id,
+                        uhi_hotspot=("uhi_hotspots" in (mem.get("requested_analyses") or [])),
+                        aq_hotspot=("aq_hotspots" in (mem.get("requested_analyses") or [])),
+                        green_access=("green_access" in (mem.get("requested_analyses") or [])),
+                    )
+                    db.add(rec)
+                    db.commit()
+                    db.refresh(rec)
+                except Exception as e:
+                    print(f"[DB] Warning: failed to persist memory record for {request_id}: {e}")
+
+            data: Dict[str, Any] = {}
+            completed: List[str] = []
+            requested: List[str] = []
+            if rec.uhi_hotspot:
+                requested.append("uhi_hotspots")
+            if rec.aq_hotspot:
+                requested.append("aq_hotspots")
+            if rec.green_access:
+                requested.append("green_access")
+
+            if rec.uhi_result is not None:
+                data["uhi_hotspots"] = rec.uhi_result
+                completed.append("uhi_hotspots")
+            if rec.aq_resutl is not None:
+                data["aq_hotspots"] = rec.aq_resutl
+                completed.append("aq_hotspots")
+            if rec.green_access_result is not None:
+                data["green_access"] = rec.green_access_result
+                completed.append("green_access")
+            if rec.any_other_result is not None:
+                data["any_other_result"] = rec.any_other_result
+
+            status_val = "completed" if requested and set(requested).issubset(set(completed)) else "partial" if completed else "idle"
+
+            # If DB had no results but in-memory has them, include and persist them
+            if not completed:
+                mem = analysis_status.get(request_id) or {}
+                mem_data = (mem.get("data") or {})
+                # Populate from memory if available
+                for atype in ("uhi_hotspots", "aq_hotspots", "green_access"):
+                    payload = mem_data.get(atype)
+                    if payload is not None:
+                        data[atype] = payload
+                        completed.append(atype)
+                        try:
+                            # Try to persist to DB best-effort
+                            if atype == "uhi_hotspots":
+                                rec.uhi_result = payload
+                            elif atype == "aq_hotspots":
+                                rec.aq_resutl = payload
+                            elif atype == "green_access":
+                                rec.green_access_result = payload
+                        except Exception:
+                            pass
+                try:
+                    db.commit()
+                except Exception as e:
+                    print(f"[DB] Warning: failed to backfill record for {request_id}: {e}")
+
+            return {
+                "request_id": rec.request_id,
+                "requested_analyses": requested,
+                "completed_analyses": completed,
+                "status": status_val,
+                "request_coming_time": rec.request_coming_time.isoformat() if rec.request_coming_time else None,
+                "durations": {
+                    "uhi_hotspots": rec.uhi_hotspot_complete_time,
+                    "aq_hotspots": rec.aq_hotspot_complete_time,
+                    "green_access": rec.green_access_complete_time,
+                },
+                "data": data,
+            }
+        finally:
+            db.close()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching result: {e}")

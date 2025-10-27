@@ -219,3 +219,4 @@ web_outputs/
 web_outputs_remote/
 
 practice/
+local_fallback.db
