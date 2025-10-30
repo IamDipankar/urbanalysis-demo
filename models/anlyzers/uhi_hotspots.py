@@ -27,7 +27,7 @@ except Exception as e:
     )
 
 # ------------------ CONFIG ------------------
-AOI_BBOX = [90.32, 23.70, 90.52, 23.86]  # (W,S,E,N) — Narayanganj
+# AOI_BBOX = [90.32, 23.70, 90.52, 23.86]  # (W,S,E,N) — Narayanganj
 DAYS_BACK = 60
 END = date.today()
 START = END - timedelta(days=DAYS_BACK)
@@ -88,8 +88,8 @@ def utm_crs_from_bbox(bbox):
     epsg = 32600 + zone if lat_c >= 0 else 32700 + zone
     return f"EPSG:{epsg}"
 
-def aoi_polygon_wgs84():
-    minx, miny, maxx, maxy = AOI_BBOX
+def aoi_polygon_wgs84(aoi_bbox):
+    minx, miny, maxx, maxy = aoi_bbox
     return box(minx, miny, maxx, maxy)
 
 # @profile
@@ -814,7 +814,7 @@ def run(session_id, ee_geometry = None, ee_bbox = None, geoJson = None):
     for hp, cid in zip(hotspots, clusters):
         hp["_cid"] = cid
     print(" done")
-    metric_crs = utm_crs_from_bbox(AOI_BBOX)
+    metric_crs = utm_crs_from_bbox(ee_bbox)
     envelopes_by_cid = build_concave_envelopes(hotspots, clusters, metric_crs, alpha_m=ALPHA_M, min_pts=MIN_ENVELOPE_POINTS)
     if not envelopes_by_cid:
         envelopes_by_cid = build_concave_envelopes(hotspots, [0]*len(hotspots), metric_crs, alpha_m=ALPHA_M, min_pts=3)
@@ -876,7 +876,7 @@ def run(session_id, ee_geometry = None, ee_bbox = None, geoJson = None):
 
     # OSM: buildings, sensitive sites, water (Ram culprit)
     # print(" OSM: buildings, sensitive sites, water…")
-    # aoi_poly = aoi_polygon_wgs84()
+    # aoi_poly = aoi_polygon_wgs84(ee_bbox)
     # print("aoi_poly done")
     # sys.stdout.flush()
     # try:
@@ -931,7 +931,7 @@ def run(session_id, ee_geometry = None, ee_bbox = None, geoJson = None):
     for rank, (cid, poly) in enumerate(selected, start=1):
         print(f" \n--- Hot zone #{rank} (cluster {cid}) ---")
         # Geometry conversions
-        poly_series = gpd.GeoSeries([poly], crs="EPSG:4326").to_crs(utm_crs_from_bbox(AOI_BBOX))
+        poly_series = gpd.GeoSeries([poly], crs="EPSG:4326").to_crs(utm_crs_from_bbox(ee_bbox))
         area_km2 = float(poly_series.area.iloc[0] / 1e6)
         geom = ee.Geometry(poly.__geo_interface__)
 

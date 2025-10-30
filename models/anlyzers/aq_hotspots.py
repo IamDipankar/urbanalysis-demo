@@ -40,7 +40,7 @@ except Exception as e:
     )
 
 # ------------------ CONFIG ------------------
-AOI_BBOX = [90.32, 23.70, 90.52, 23.86]  # (W,S,E,N)
+# AOI_BBOX = [90.32, 23.70, 90.52, 23.86]  # (W,S,E,N)
 
 DAYS_BACK = 60
 END = date.today()
@@ -329,8 +329,8 @@ def ensure_clusters(hotspots):
     return clusters
 
 # ------------------ OSM HELPERS ------------------
-def aoi_polygon_wgs84():
-    minx, miny, maxx, maxy = AOI_BBOX
+def aoi_polygon_wgs84(aoi_bbox):
+    minx, miny, maxx, maxy = aoi_bbox
     return box(minx, miny, maxx, maxy)
 
 def osm_geoms_from_polygon(aoi_poly_wgs84, tags_dict):
@@ -620,7 +620,7 @@ def run(session_id=None, ee_geometry=None, aoi_bbox=None, geoJson = None):
 
     print("Started aq hotspot analysis… Session:", session_id)
 
-    aoi = ee_geometry or ee.Geometry.Rectangle(AOI_BBOX)
+    aoi = ee_geometry
     start_iso, end_iso = str(START), str(END)
     print(f"Geometry: Given | Window: {start_iso} → {end_iso}")
 
@@ -697,7 +697,7 @@ def run(session_id=None, ee_geometry=None, aoi_bbox=None, geoJson = None):
         hotspots[i]["aq_z_monsoon"] = float(val) if val is not None else None
 
     # OSM context
-    aoi_poly = aoi_polygon_wgs84()
+    aoi_poly = aoi_polygon_wgs84(aoi_bbox)
     try:
         sens_all = osm_geoms_from_polygon(aoi_poly, {"amenity": ["school","clinic","hospital","doctors"],
                                                      "social_facility": ["nursing_home","assisted_living"]})
@@ -718,7 +718,7 @@ def run(session_id=None, ee_geometry=None, aoi_bbox=None, geoJson = None):
         ind_all = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
     # Build concave envelopes per cluster (filter tiny/degenerate)
-    metric_crs = utm_crs_from_bbox(aoi_bbox or AOI_BBOX)
+    metric_crs = utm_crs_from_bbox(aoi_bbox)
     envelopes_by_cid = build_concave_envelopes(hotspots, clusters, metric_crs, alpha_m=ALPHA_M, min_pts=MIN_ENVELOPE_POINTS)
     if not envelopes_by_cid:
         envelopes_by_cid = build_concave_envelopes(hotspots, [0]*len(hotspots), metric_crs, alpha_m=ALPHA_M, min_pts=3)
@@ -796,7 +796,7 @@ def run(session_id=None, ee_geometry=None, aoi_bbox=None, geoJson = None):
 
 
     # ---------- Map with Top-3 only ----------
-    m = build_map(aoi_bbox or AOI_BBOX, hotspots, selected, cid_wise_descriptions)
+    m = build_map(aoi_bbox, hotspots, selected, cid_wise_descriptions)
     html_output_dir = f'web_outputs/{session_id}/aq_hotspots.html' if session_id else 'web_outputs/temp/aq_hotspots.html'
     os.makedirs(os.path.dirname(html_output_dir), exist_ok=True)
     m.save(html_output_dir)
@@ -804,7 +804,7 @@ def run(session_id=None, ee_geometry=None, aoi_bbox=None, geoJson = None):
 
     # ---------- Build client payload for Leaflet rendering ----------
     try:
-        bbox = aoi_bbox or AOI_BBOX
+        bbox = aoi_bbox
         lon_c = (bbox[0] + bbox[2]) / 2.0
         lat_c = (bbox[1] + bbox[3]) / 2.0
 

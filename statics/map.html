@@ -573,11 +573,13 @@
         }
         // ------------------------------------------------
 
-        // Analysis rendering state
+    // Analysis rendering state
         const analysisLayers = {}; // { analysisType: [leafletLayer,...] }
         const layerToggles = {}; // checkbox elements for toggling
         let currentSessionId = null;
         let es = null; // EventSource
+    // Indicates whether a run with potentially multiple analyses is in progress
+    let runInProgress = false;
         // Cache for AI suggestions per feature (persist across back/forward within session)
         const aiSuggestionCache = {}; // key -> HTML string
 
@@ -748,22 +750,26 @@
                 if (backBtn) backBtn.style.display = 'inline-block';
                 if (clearHistBtn) clearHistBtn.style.display = 'none';
                 if (titleEl) titleEl.textContent = 'Results';
-                // Hide left panel while showing results
-                try { hideLeftPanel(); } catch(_) {}
+                // Hide left panel while showing results ONLY when no run is in progress
+                if (!runInProgress) {
+                    try { hideLeftPanel(); } catch(_) {}
+                }
             } else if (mode === 'list') {
                 detEl.style.display = 'none';
                 listEl.style.display = 'block';
                 if (backBtn) backBtn.style.display = 'inline-block';
                 if (clearHistBtn) clearHistBtn.style.display = 'none';
                 if (titleEl) titleEl.textContent = 'Results';
-                // Hide left panel while showing results list
-                try { hideLeftPanel(); } catch(_) {}
+                // Hide left panel while showing results list ONLY when no run is in progress
+                if (!runInProgress) {
+                    try { hideLeftPanel(); } catch(_) {}
+                }
             } else { // history
                 detEl.style.display = 'none';
                 listEl.style.display = 'none';
                 if (backBtn) backBtn.style.display = 'none';
                 if (clearHistBtn) clearHistBtn.style.display = 'inline-block';
-                if (titleEl) titleEl.textContent = 'Histories';
+                if (titleEl) titleEl.textContent = 'Your Analyses';
                 // Show left panel again in history mode
                 try { showLeftPanel(); } catch(_) {}
             }
@@ -1063,6 +1069,13 @@
         }
 
         // --- Local history management ---
+        // Always-present sample analyses (appended to device history, never cleared)
+        const SAMPLE_HISTORY = [
+            { request_id: 'smhdw87famwrlj', location_label: 'Narayanganj District, Dhaka Division, Bangladesh', is_sample: true },
+            { request_id: 'smhdvj6eef6sf1', location_label: 'Dhaka Divison, Bangladesh', is_sample: true },
+            { request_id: 'smhdwnqyc9f5zb', location_label: 'Delhi, India', is_sample: true },
+            { request_id: 'smh8upuk1g3u0r', location_label: 'Hong Kong', is_sample: true }
+        ];
         const HISTORY_KEY = 'urbanalysis_history';
         function loadHistory() {
             try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch(_) { return []; }
@@ -1084,16 +1097,36 @@
             ensureResultsToggles();
             const histEl = document.getElementById('historyBody');
             if (!histEl) return;
-            const list = loadHistory();
-            if (!list.length) {
+            // Merge stored history with sample items (append samples, dedupe by request_id)
+            const stored = Array.isArray(loadHistory()) ? loadHistory() : [];
+            const seen = new Set();
+            const combined = [];
+            stored.forEach(it => {
+                if (!it || !it.request_id) return;
+                if (seen.has(it.request_id)) return;
+                seen.add(it.request_id);
+                combined.push(it);
+            });
+            SAMPLE_HISTORY.forEach(it => {
+                if (!it || !it.request_id) return;
+                if (seen.has(it.request_id)) return;
+                seen.add(it.request_id);
+                combined.push(it);
+            });
+
+            if (!combined.length) {
                 histEl.innerHTML = `<p>No history yet. Run an analysis to see it here.</p>`;
                 return;
             }
-            const rows = list.map(it => {
-                const started = it.started_at ? new Date(it.started_at) : null;
-                const completed = it.completed_at ? new Date(it.completed_at) : null;
-                const when = completed || started;
-                const dtLabel = when ? when.toLocaleString() : '(time unknown)';
+            const rows = combined.map(it => {
+                const isSample = !!it.is_sample;
+                let dtLabel = 'Sample Analysis';
+                if (!isSample) {
+                    const started = it.started_at ? new Date(it.started_at) : null;
+                    const completed = it.completed_at ? new Date(it.completed_at) : null;
+                    const when = completed || started;
+                    dtLabel = when ? when.toLocaleString() : '(time unknown)';
+                }
                 const locLabel = it.location_label || 'Custom boundary';
                 return `<div class="hist-row" data-id="${it.request_id}" style="padding:.45rem .5rem;border:1px solid #e7e9ee;border-radius:8px;margin-bottom:.45rem;cursor:pointer;">
                     <div style="font-weight:700;">${dtLabel}</div>
@@ -1205,6 +1238,8 @@
             // Show status only after backend accepted the job
             statusMsg.style.display = 'block';
             runStartedAt = new Date().toISOString();
+            // Mark run as in progress now that backend has accepted
+            runInProgress = true;
 
             // SSE stream
             if (es) { try { es.close(); } catch(_){} }
@@ -1224,6 +1259,8 @@
                         runBtn.querySelector('.btn-loading').style.display = 'none';
                         statusMsg.style.display = 'none';
                         cancelBtn.style.display = 'none';
+                        // Mark run complete
+                        runInProgress = false;
                         // Hide the left panel while showing results
                         hideLeftPanel();
                         // Do NOT re-enable checkboxes/draw controls here
@@ -1304,6 +1341,9 @@
 
             // Close SSE stream (best-effort)
             if (es) { try { es.close(); } catch(_){} es = null; }
+
+            // Mark run as not in progress
+            runInProgress = false;
 
             // recalc whether run can be clicked again
             updateButtonState();
