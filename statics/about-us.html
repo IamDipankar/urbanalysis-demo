@@ -7,6 +7,53 @@
     <link rel="stylesheet" href="/statics/styles.d112.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Ensure solid, readable navbar on all devices for this page */
+        .navbar { 
+            background: #2563eb !important; 
+            border-bottom: none !important; 
+            box-shadow: 0 2px 10px rgba(0,0,0,.10);
+        }
+        .navbar .nav-link, .navbar .nav-title, .navbar .nav-icon { color: #ffffff !important; }
+
+        /* About page content card to avoid washed-out look on bright/dark screens */
+        .info-section {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 6rem 1rem 2rem; /* extra top for fixed navbar */
+        }
+        .info-section .info-content {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border-radius: 16px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+        }
+        .info-section .section-title { 
+            display:flex; align-items:center; gap:.6rem; 
+            color: var(--text-primary);
+            margin-bottom: .75rem;
+        }
+        .about-content .about-text { color: var(--text-primary); }
+        .about-content a.about-text { color: var(--primary-color); text-decoration: underline; }
+        .team-features { 
+            display:grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap:.75rem; margin-top:1rem; 
+        }
+        .team-features .feature { 
+            background: var(--bg-secondary); border:1px solid var(--border-color); border-radius:10px; padding:.75rem; display:flex; align-items:center; gap:.6rem; color: var(--text-primary);
+        }
+
+        /* Mobile adjustments to maintain contrast */
+        @media (max-width: 768px) {
+            .info-section { padding: 5.5rem 1rem 1.25rem; }
+            .info-section .info-content { padding: 1rem; }
+            .team-features { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 480px) {
+            .team-features { grid-template-columns: 1fr; }
+        }
+    </style>
 </head>
 <body>
     <!-- Navigation (copied from index.html) -->
@@ -52,13 +99,17 @@
                 </h2>
                 <div class="about-content">
                     <p class="about-text">
-                        We are <strong>Team NeuralNinjas</strong>, passionate about technological implementations for <strong>urban sustainablity </strong> and the <strong>environment. </strong>
+                        We are <strong>Team Neural Ninjas</strong>, passionate about technological implementations for <strong>urban sustainablity </strong> and the <strong>environment. </strong>
                     </p>
                     <p class="about-text">
-                        This project was developed as part of the 
+                        This project was initially developed as part of the 
                         <a href = "https://www.spaceappschallenge.org/2025/challenges/data-pathways-to-healthy-cities-and-human-settlements/" class = "about-text">
                             NASA Space Apps Challenge 2025.
                         </a>
+                    </p>
+                    
+                    <p class = "about-text">
+                        We are proud to present this project on the International Data Science Olympiad 2025.
                     </p>
 
                     <p class="about-text">

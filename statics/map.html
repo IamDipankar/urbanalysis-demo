@@ -281,7 +281,7 @@
 
                     <button id="cancelAnalysisBtn" class="cancel-analysis-btn">Cancel Analysis</button>
 
-                    <div id="statusMessage" class="status-message">
+                    <div id="statusMessage" class="status-message" style="display:none;">
                         <i class="fas fa-clock"></i> The analysis may take a while. Hold tight...
                     </div>
                 </div>
@@ -1142,9 +1142,18 @@
                         row.classList.add('active');
                     } catch(_) {}
 
-                    // Show loading message
-                    const loadEl = document.getElementById('historyLoading');
-                    if (loadEl) loadEl.style.display = 'block';
+                    // Show per-item loading line inside the clicked row
+                    try {
+                        // Remove any existing loading lines from all rows first
+                        histEl.querySelectorAll('.hist-row .hist-row-loading').forEach(n => n.remove());
+                        const line = document.createElement('div');
+                        line.className = 'hist-row-loading';
+                        line.style.fontSize = '.85rem';
+                        line.style.color = '#2563eb';
+                        line.style.marginTop = '.25rem';
+                        line.textContent = '(loading...)';
+                        row.appendChild(line);
+                    } catch(_) {}
                     const rid = row.getAttribute('data-id');
                     try {
                         const resp = await fetch(`/analysis-result/${rid}`);
@@ -1178,12 +1187,12 @@
                         try { setLeftInputsEnabled(false); } catch(_) {}
                         // Switch panel into results list mode
                         setResultsMode('list');
-                        // Hide loading message
-                        if (loadEl) loadEl.style.display = 'none';
+                        // Remove per-item loading line
+                        try { const l = row.querySelector('.hist-row-loading'); if (l) l.remove(); } catch(_) {}
                     } catch (e) {
                         alert('Failed to load that analysis from server.');
-                        // Hide loading message on error
-                        if (loadEl) loadEl.style.display = 'none';
+                        // Remove per-item loading line on error
+                        try { const l = row.querySelector('.hist-row-loading'); if (l) l.remove(); } catch(_) {}
                     }
                 });
             });
@@ -1296,6 +1305,8 @@
             runBtn.querySelector('.btn-loading').style.display = 'inline-block';
             // moved: show after backend accepted
             cancelBtn.style.display = 'block';
+            // Show status immediately upon clicking Run
+            try { statusMsg.style.display = 'block'; } catch(_) {}
 
             // NEW: transform analysis list UI
             showRunningIndicators();
@@ -1344,6 +1355,15 @@
 
             // Mark run as not in progress
             runInProgress = false;
+
+            // Show History panel after cancel
+            try {
+                ensureResultsToggles();
+                setResultsMode('history');
+                renderHistoryList();
+                const hb = document.getElementById('historyBody');
+                if (hb) { hb.style.pointerEvents = ''; hb.style.opacity = ''; }
+            } catch(_) {}
 
             // recalc whether run can be clicked again
             updateButtonState();

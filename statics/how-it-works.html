@@ -9,6 +9,13 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         /* Additional styles for how-it-works page */
+        /* Force solid navbar for contrast on this page only */
+        .navbar {
+            background: #2563eb !important;
+            border-bottom: none !important;
+            box-shadow: 0 2px 10px rgba(0,0,0,.10);
+        }
+        .navbar .nav-link, .navbar .nav-title, .navbar .nav-icon { color: #ffffff !important; }
         .how-it-works-container {
             max-width: 1200px;
             margin: 0 auto;
@@ -88,7 +95,8 @@
         }
         
         .objective-text {
-            color: #d9e8ff;
+            /* Use primary text color to avoid washed-out look on light backgrounds */
+            color: var(--text-primary);
             line-height: 1.6;
         }
         
