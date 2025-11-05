@@ -6,7 +6,9 @@
 
 ### AI-Driven Urban Sustainability Planner
 
-**Integrating NASA and ESA Satellite Intelligence for Greener, Cooler, Cleaner Cities**
+**Integrating NASA and ESA Satellite Intelligence for Greener, Cooler, Cleaner Cities.**
+
+(Its an preview version of the web app to showcase its core functionalities.)
 
 ---
 
